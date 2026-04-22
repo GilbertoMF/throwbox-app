@@ -4,7 +4,7 @@ FROM node:18-alpine AS builder
 WORKDIR /app
 
 # Copy package files and install dependencies
-COPY package*.json ./
+COPY package.json ./
 RUN npm install
 
 # Copy source code
@@ -19,7 +19,7 @@ FROM node:18-alpine
 WORKDIR /app
 
 # Copy production dependencies
-COPY package*.json ./
+COPY package.json ./
 RUN npm install --production
 
 # Copy built frontend assets and backend bundle
