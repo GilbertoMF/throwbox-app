@@ -1,0 +1,6 @@
+{
+  "name": "ThrowBox",
+  "description": "A real-time multiplayer application where users can toss a virtual box between their devices.",
+  "requestFramePermissions": [],
+  "majorCapabilities": []
+}

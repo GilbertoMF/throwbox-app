@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">Throwbox</string>
+    <string name="title_activity_main">Throwbox</string>
+    <string name="package_name">com.throwbox.app</string>
+    <string name="custom_url_scheme">com.throwbox.app</string>
+</resources>
