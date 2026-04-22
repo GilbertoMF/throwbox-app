@@ -82,6 +82,16 @@ async function startServer() {
     if (!pool) return;
 
     try {
+      // Auto-create table if it doesn't exist
+      await pool.query(`
+        CREATE TABLE IF NOT EXISTS throwbox_state (
+          id TEXT PRIMARY KEY,
+          game_objects JSONB NOT NULL DEFAULT '[]',
+          transfer_history JSONB NOT NULL DEFAULT '[]',
+          updated_at TIMESTAMPTZ DEFAULT NOW()
+        );
+      `);
+
       const { rows } = await pool.query(
         "SELECT game_objects, transfer_history FROM throwbox_state WHERE id = $1",
         [STATE_ROW_ID]
