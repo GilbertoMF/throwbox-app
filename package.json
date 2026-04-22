@@ -6,7 +6,7 @@
   "scripts": {
     "dev": "tsx backend/index.ts",
     "build:frontend": "vite build",
-    "build:backend": "esbuild backend/index.ts --bundle --platform=node --outfile=dist-server/index.js --target=node18 --format=esm --banner:js=\"import { createRequire } from 'module'; const require = createRequire(import.meta.url);\"",
+    "build:backend": "esbuild backend/index.ts --bundle --platform=node --packages=external --outfile=dist-server/index.js --target=node18 --format=esm",
     "build": "npm run build:frontend && npm run build:backend",
     "android:sync": "npm run build:frontend && npx cap sync android",
     "android:open": "npx cap open android",
