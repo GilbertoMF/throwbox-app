@@ -1,62 +1,167 @@
 <div align="center">
-<img width="1200" height="475" alt="GHBanner" src="https://github.com/user-attachments/assets/0aa67016-6eaf-458a-adb2-6e31a0763ed6" />
+
+<img width="1200" alt="Banner" src="https://github.com/user-attachments/assets/0aa67016-6eaf-458a-adb2-6e31a0763ed6">
+
+# 🚀 ThrowBox
+
+Modern multiplayer web application powered by **Google Gemini**, **Supabase**, **Socket.IO** and **Capacitor**.
+
+[![Node.js](https://img.shields.io/badge/Node.js-18+-green)]()
+[![Capacitor](https://img.shields.io/badge/Capacitor-Android-blue)]()
+[![Supabase](https://img.shields.io/badge/Supabase-Backend-3FCF8E)]()
+[![License](https://img.shields.io/badge/License-MIT-yellow)]()
+
 </div>
 
-# Run and deploy your AI Studio app
+---
 
-This contains everything you need to run your app locally.
+# 📖 Overview
 
-View your app in AI Studio: https://ai.studio/apps/64a86097-c8be-4167-90e1-c579cea787a6
+ThrowBox is an AI-powered multiplayer application built with modern web technologies.
 
-## Run Locally
+Features include:
 
-**Prerequisites:**  Node.js
+- 🤖 Google Gemini AI
+- 📱 Android support (Capacitor)
+- ☁️ Supabase backend
+- ⚡ Socket.IO real-time communication
+- 🌐 Easy cloud deployment
 
+---
 
-1. Install dependencies:
-   `npm install`
-2. Set the `GEMINI_API_KEY` in [.env.local](.env.local) to your Gemini API key
-3. Run the app:
-   `npm run dev`
+# 📑 Table of Contents
 
-## Android (Capacitor)
+- Installation
+- Environment Variables
+- Running Locally
+- Android Build
+- Deploy
+- Supabase
+- Project Structure
 
-1. Set `VITE_SOCKET_URL` in `.env.local` to your Socket.IO backend URL.
-   Example (real device on same Wi-Fi): `VITE_SOCKET_URL=http://192.168.1.42:3000`
-2. Build and sync Android project:
-   `npm run android:sync`
-3. Build debug APK:
-   `npm run android:debug`
+---
 
-Generated APK path:
-`android/app/build/outputs/apk/debug/app-debug.apk`
+# 📦 Installation
 
-## Deploy on Northflank (Free Sandbox)
+## Requirements
 
-1. Push this project to GitHub.
-2. In Northflank, create a new `Service` from that Git repository.
-3. Use these settings:
-   - Build command: `npm install && npm run build`
-   - Start command: `npm run start`
-   - Port: `PORT` (Northflank injects it automatically)
-4. Add env vars:
-   - `NODE_ENV=production`
-   - `SUPABASE_URL=https://YOUR_PROJECT_REF.supabase.co`
-   - `SUPABASE_SERVICE_ROLE_KEY=YOUR_SUPABASE_SERVICE_ROLE_KEY`
-5. Configure a health check path:
-   - `/api/health`
-6. Deploy and copy your public HTTPS URL.
+- Node.js 18+
+- npm
+- Gemini API Key
 
-After deploy, point your Android app to this URL:
-- `.env.local` in this project:
-  - `VITE_SOCKET_URL=https://YOUR-NORTHFLANK-URL`
-- Rebuild APK:
-  - `npm run android:debug`
+Clone the repository:
 
-## Supabase setup
+```bash
+git clone https://github.com/your-user/your-repository.git
 
-1. Create a project in Supabase.
-2. Open `SQL Editor` and run:
+cd your-repository
+```
+
+Install dependencies:
+
+```bash
+npm install
+```
+
+---
+
+# ⚙️ Environment Variables
+
+Create a `.env.local` file.
+
+| Variable | Description |
+|------------|-------------|
+| GEMINI_API_KEY | Gemini API Key |
+| VITE_SOCKET_URL | Socket.IO backend URL |
+
+Example:
+
+```env
+GEMINI_API_KEY=xxxxxxxxxxxxxxxx
+VITE_SOCKET_URL=http://192.168.1.42:3000
+```
+
+---
+
+# 🚀 Run Locally
+
+Start the development server:
+
+```bash
+npm run dev
+```
+
+---
+
+# 📱 Android (Capacitor)
+
+Sync Android project:
+
+```bash
+npm run android:sync
+```
+
+Build Debug APK:
+
+```bash
+npm run android:debug
+```
+
+APK output:
+
+```
+android/app/build/outputs/apk/debug/app-debug.apk
+```
+
+---
+
+# ☁️ Deploy (Northflank)
+
+Push your project to GitHub.
+
+Create a new **Service** using your repository.
+
+Configuration:
+
+| Setting | Value |
+|----------|-------|
+| Build Command | `npm install && npm run build` |
+| Start Command | `npm run start` |
+| Port | `PORT` |
+
+Environment Variables:
+
+```text
+NODE_ENV=production
+
+SUPABASE_URL=https://YOUR_PROJECT.supabase.co
+
+SUPABASE_SERVICE_ROLE_KEY=YOUR_SERVICE_ROLE_KEY
+```
+
+Health Check:
+
+```
+/api/health
+```
+
+After deployment update:
+
+```env
+VITE_SOCKET_URL=https://YOUR-NORTHFLANK-URL
+```
+
+Rebuild Android:
+
+```bash
+npm run android:debug
+```
+
+---
+
+# 🗄️ Supabase
+
+Run the following SQL:
 
 ```sql
 create table if not exists public.throwbox_state (
@@ -67,9 +172,59 @@ create table if not exists public.throwbox_state (
 );
 ```
 
-3. In `Project Settings -> API`, copy:
-   - Project URL (`SUPABASE_URL`)
-   - `service_role` key (`SUPABASE_SERVICE_ROLE_KEY`)
+Copy:
 
-Security note:
-- `SUPABASE_SERVICE_ROLE_KEY` must stay only in backend runtime variables (Northflank), never in app frontend.
+- Project URL
+- Service Role Key
+
+from:
+
+```
+Project Settings → API
+```
+
+---
+
+# 🔒 Security
+
+Never expose:
+
+```
+SUPABASE_SERVICE_ROLE_KEY
+```
+
+This key must only exist on the backend.
+
+---
+
+# 📂 Project Structure
+
+```
+.
+├── android/
+├── public/
+├── src/
+├── server/
+├── .env.local
+├── package.json
+└── README.md
+```
+
+---
+
+# ❤️ Built With
+
+- Google Gemini
+- React
+- Vite
+- Socket.IO
+- Supabase
+- Capacitor
+- Node.js
+
+---
+
+# 📄 License
+
+MIT License
+````
