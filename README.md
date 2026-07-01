@@ -1,60 +1,97 @@
 <div align="center">
 
-<img width="1200" alt="Banner" src="assets/banner.png">
+<img src="assets/banner.png" alt="ThrowBox Banner" width="100%" />
 
 # 🚀 ThrowBox
 
-Modern multiplayer web application powered by **Google Gemini**, **Supabase**, **Socket.IO** and **Capacitor**.
+Modern multiplayer application powered by **Google Gemini**, **Supabase**, **Socket.IO** and **Capacitor**.
 
-[![Node.js](https://img.shields.io/badge/Node.js-18+-green)]()
-[![Capacitor](https://img.shields.io/badge/Capacitor-Android-blue)]()
-[![Supabase](https://img.shields.io/badge/Supabase-Backend-3FCF8E)]()
-[![License](https://img.shields.io/badge/License-MIT-yellow)]()
+[![Node.js](https://img.shields.io/badge/Node.js-18+-6fa660?style=flat-square&logo=node.js)](https://nodejs.org)
+[![Capacitor](https://img.shields.io/badge/Capacitor-Android-119eff?style=flat-square&logo=capacitor)](https://capacitorjs.com)
+[![Supabase](https://img.shields.io/badge/Supabase-Backend-3FCF8E?style=flat-square&logo=supabase)](https://supabase.com)
+[![Socket.io](https://img.shields.io/badge/Socket.io-Realtime-010101?style=flat-square&logo=socket.io)](https://socket.io)
+[![License](https://img.shields.io/badge/License-MIT-yellow?style=flat-square)](LICENSE)
 
 </div>
 
 ---
 
-# 📖 Overview
+## 📖 Overview
 
-ThrowBox is an AI-powered multiplayer application built with modern web technologies.
+**ThrowBox** is an AI-powered, real-time multiplayer application designed for cross-device interaction. Drag physical objects (or custom doodles) off the edge of your phone screen, and watch them seamlessly fly into your friend's screen next to you.
 
-Features include:
+```mermaid
+sequenceDiagram
+    autonumber
+    participant P1 as Player 1 (Device A)
+    participant Srv as Server (Socket.io)
+    participant P2 as Player 2 (Device B)
 
-- 🤖 Google Gemini AI
-- 📱 Android support (Capacitor)
-- ☁️ Supabase backend
-- ⚡ Socket.IO real-time communication
-- 🌐 Easy cloud deployment
-
----
-
-# 📑 Table of Contents
-
-- Installation
-- Environment Variables
-- Running Locally
-- Android Build
-- Deploy
-- Supabase
-- Project Structure
+    Note over P1: Dragging object to right edge
+    P1->>Srv: dragging-object (direction: right, position)
+    Srv->>P2: peer-dragging (show ghost preview on left edge)
+    
+    Note over P1: Release & Throw!
+    P1->>Srv: transfer-object (objectId)
+    Srv->>P2: object-transferred (trigger spring entrance animation)
+    Note over P2: Object added to inventory!
+```
 
 ---
 
-# 📦 Installation
+## 📑 Table of Contents
 
-## Requirements
+- [Features](#-features)
+- [Project Structure](#-project-structure)
+- [Requirements](#-requirements)
+- [Installation](#-installation)
+- [Environment Variables](#-environment-variables)
+- [Running Locally](#-running-locally)
+- [Deploying to Northflank](#-deploying-to-northflank)
+- [Supabase Setup](#-supabase-setup)
+- [Security](#-security)
 
-- Node.js 18+
-- npm
-- Gemini API Key
+---
+
+## ✨ Features
+
+*   🤖 **Google Gemini AI:** Generate and interact with custom dynamic objects.
+*   📱 **Android Integration:** Fully built with Capacitor for native mobile deployment.
+*   ⚡ **Real-time Engine:** Ultra-low latency state sync using Socket.IO.
+*   🗄️ **Persistent State:** PostgreSQL database sync hosted on Supabase.
+*   ☁️ **Cloud Native:** Pre-configured for easy containerized deployment on Northflank.
+
+---
+
+## 📂 Project Structure
+
+```bash
+.
+├── android/          # Native Android Studio project (Capacitor)
+├── assets/           # Repository media assets (Banners, logos)
+├── backend/          # Node.js + Express + Socket.IO server code
+├── database/         # Database schemas and SQL files
+├── src/              # React (Vite) frontend application code
+├── .env.example      # Template for environment configuration
+├── package.json      # Dependencies and execution scripts
+└── README.md         # Documentation
+```
+
+---
+
+## 💻 Installation
+
+### Requirements
+
+*   Node.js 18+
+*   npm
+*   Gemini API Key
 
 Clone the repository:
 
 ```bash
-git clone https://github.com/your-user/your-repository.git
-
-cd your-repository
+git clone https://github.com/GilbertoMF/throwbox-app.git
+cd throwbox-app
 ```
 
 Install dependencies:
@@ -65,27 +102,23 @@ npm install
 
 ---
 
-# ⚙️ Environment Variables
+## ⚙️ Environment Variables
 
-Create a `.env.local` file.
+Create a `.env.local` file in the root directory.
 
-| Variable | Description |
-|------------|-------------|
-| GEMINI_API_KEY | Gemini API Key |
-| VITE_SOCKET_URL | Socket.IO backend URL |
+| Variable | Description | Default / Example |
+| :--- | :--- | :--- |
+| `GEMINI_API_KEY` | Your Google Gemini API Key | `AIzaSy...` |
+| `VITE_SOCKET_URL` | Socket.IO backend URL (Use local IP for testing) | `http://192.168.1.42:3000` |
 
-Example:
-
-```env
-GEMINI_API_KEY=xxxxxxxxxxxxxxxx
-VITE_SOCKET_URL=http://192.168.1.42:3000
-```
+> [!TIP]
+> When testing on a physical Android device on the same Wi-Fi network, configure `VITE_SOCKET_URL` with your computer's local IP address.
 
 ---
 
-# 🚀 Run Locally
+## 🚀 Running Locally
 
-Start the development server:
+Start the full development server:
 
 ```bash
 npm run dev
@@ -93,75 +126,37 @@ npm run dev
 
 ---
 
-# 📱 Android (Capacitor)
+## ☁️ Deploying to Northflank
 
-Sync Android project:
-
-```bash
-npm run android:sync
-```
-
-Build Debug APK:
-
-```bash
-npm run android:debug
-```
-
-APK output:
-
-```
-android/app/build/outputs/apk/debug/app-debug.apk
-```
-
----
-
-# ☁️ Deploy (Northflank)
-
-Push your project to GitHub.
-
-Create a new **Service** using your repository.
-
-Configuration:
+1. Push your repository to GitHub.
+2. In your Northflank dashboard, create a new **Service** from your repository.
+3. Configure the following deployment settings:
 
 | Setting | Value |
-|----------|-------|
-| Build Command | `npm install && npm run build` |
-| Start Command | `npm run start` |
-| Port | `PORT` |
+| :--- | :--- |
+| **Build Command** | `npm install && npm run build` |
+| **Start Command** | `npm run start` |
+| **Port** | `PORT` (Exposed port: 3000) |
 
-Environment Variables:
+4. Add the following **Environment Variables** in Northflank:
+   *   `NODE_ENV` = `production`
+   *   `SUPABASE_URL` = `https://YOUR_PROJECT.supabase.co`
+   *   `SUPABASE_SERVICE_ROLE_KEY` = `YOUR_SERVICE_ROLE_KEY`
+   *   `DATABASE_URL` = `postgresql://postgres:PASSWORD@YOUR_DB_HOST:5432/postgres`
 
-```text
-NODE_ENV=production
+5. Configure a **Health Check**:
+   *   Path: `/api/health`
 
-SUPABASE_URL=https://YOUR_PROJECT.supabase.co
-
-SUPABASE_SERVICE_ROLE_KEY=YOUR_SERVICE_ROLE_KEY
-```
-
-Health Check:
-
-```
-/api/health
-```
-
-After deployment update:
-
-```env
-VITE_SOCKET_URL=https://YOUR-NORTHFLANK-URL
-```
-
-Rebuild Android:
-
-```bash
-npm run android:debug
-```
+6. Once deployed, update your `.env.local` file with the deployment URL:
+   ```env
+   VITE_SOCKET_URL=https://your-app-subdomain.code.run
+   ```
 
 ---
 
-# 🗄️ Supabase
+## 🗄️ Supabase Setup
 
-Run the following SQL:
+Run this script in your Supabase **SQL Editor** to create the required table:
 
 ```sql
 create table if not exists public.throwbox_state (
@@ -172,59 +167,17 @@ create table if not exists public.throwbox_state (
 );
 ```
 
-Copy:
-
-- Project URL
-- Service Role Key
-
-from:
-
-```
-Project Settings → API
-```
+Retrieve your **Project URL** and **Service Role Key** under `Project Settings → API`.
 
 ---
 
-# 🔒 Security
+## 🔒 Security
 
-Never expose:
-
-```
-SUPABASE_SERVICE_ROLE_KEY
-```
-
-This key must only exist on the backend.
+> [!CAUTION]
+> Never expose your `SUPABASE_SERVICE_ROLE_KEY` or `GEMINI_API_KEY` in the frontend client. These keys bypass row-level security and must only exist on secure backend environments (like Northflank variables).
 
 ---
 
-# 📂 Project Structure
+## 📄 License
 
-```
-.
-├── android/
-├── public/
-├── src/
-├── server/
-├── .env.local
-├── package.json
-└── README.md
-```
-
----
-
-# ❤️ Built With
-
-- Google Gemini
-- React
-- Vite
-- Socket.IO
-- Supabase
-- Capacitor
-- Node.js
-
----
-
-# 📄 License
-
-MIT License
-````
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
