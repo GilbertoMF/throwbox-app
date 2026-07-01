@@ -109,7 +109,7 @@ Create a `.env.local` file in the root directory.
 | Variable | Description | Default / Example |
 | :--- | :--- | :--- |
 | `GEMINI_API_KEY` | Your Google Gemini API Key | `AIzaSy...` |
-| `VITE_SOCKET_URL` | Socket.IO backend URL (Use local IP for testing) | `http://192.168.1.42:3000` |
+| `VITE_SOCKET_URL` | Socket.IO backend URL | `https://your-app-subdomain.code.run` |
 ---
 
 ## 🚀 Running Locally
