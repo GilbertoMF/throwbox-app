@@ -110,10 +110,6 @@ Create a `.env.local` file in the root directory.
 | :--- | :--- | :--- |
 | `GEMINI_API_KEY` | Your Google Gemini API Key | `AIzaSy...` |
 | `VITE_SOCKET_URL` | Socket.IO backend URL (Use local IP for testing) | `http://192.168.1.42:3000` |
-
-> [!TIP]
-> When testing on a physical Android device on the same Wi-Fi network, configure `VITE_SOCKET_URL` with your computer's local IP address.
-
 ---
 
 ## 🚀 Running Locally
