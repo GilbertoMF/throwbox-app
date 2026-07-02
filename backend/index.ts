@@ -326,6 +326,13 @@ async function startServer() {
     });
   });
 
+  app.get("/api/config", (req, res) => {
+    res.json({
+      primaryColor: process.env.PRIMARY_COLOR || "#00F0FF",
+      primaryColorDark: process.env.PRIMARY_COLOR_DARK || "#00D0DF"
+    });
+  });
+
   app.get("/api/version", (req, res) => {
     res.json({
       version: process.env.LATEST_APP_VERSION || "1.0.0",

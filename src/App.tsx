@@ -67,6 +67,7 @@ function ObjectIcon({ obj, size = 120, opacity = 1 }: { obj: GameObject, size?: 
 export default function App() {
   const CLIENT_VERSION = '1.0.0';
   const [updateInfo, setUpdateInfo] = useState<{ hasUpdate: boolean; latestVersion: string; apkUrl: string } | null>(null);
+  const [config, setConfig] = useState({ primaryColor: '#00F0FF', primaryColorDark: '#00D0DF' });
   const [socket, setSocket] = useState<Socket | null>(null);
   const [users, setUsers] = useState<User[]>([]);
   const [gameObjects, setGameObjects] = useState<GameObject[]>([]);
@@ -85,7 +86,12 @@ export default function App() {
   const [brushSize, setBrushSize] = useState(1);
   const [selectedCreationMode, setSelectedCreationMode] = useState<'doodle' | 'shape'>('doodle');
   const [selectedShape, setSelectedShape] = useState<'box' | 'sphere' | 'octahedron'>('box');
-  const colors = ['#00F0FF', '#FF00FF', '#00FF00', '#FFFF00', '#FF4444', '#FFFFFF'];
+  const colors = [config.primaryColor, '#FF00FF', '#00FF00', '#FFFF00', '#FF4444', '#FFFFFF'];
+
+  useEffect(() => {
+    setSelectedColor(config.primaryColor);
+  }, [config.primaryColor]);
+
   const shapeTypes = [
     { id: 'box', name: 'Cube', icon: Box },
     { id: 'sphere', name: 'Sphere', icon: Circle },
@@ -113,8 +119,32 @@ export default function App() {
     import.meta.env.VITE_SOCKET_URL?.trim() ||
     (window.location.protocol === 'capacitor:' ? 'http://10.0.2.2:3000' : '');
 
-  // Check version on load
   const baseUrl = socketUrl || window.location.origin;
+
+  // Load configuration on mount
+  useEffect(() => {
+    const loadConfig = async () => {
+      try {
+        const res = await fetch(`${baseUrl}/api/config`);
+        if (!res.ok) return;
+        const data = await res.json();
+        if (data.primaryColor) {
+          setConfig({
+            primaryColor: data.primaryColor,
+            primaryColorDark: data.primaryColorDark || data.primaryColor
+          });
+          // Update CSS custom properties
+          document.documentElement.style.setProperty('--primary-color', data.primaryColor);
+          if (data.primaryColorDark) {
+            document.documentElement.style.setProperty('--primary-color-dark', data.primaryColorDark);
+          }
+        }
+      } catch (err) {
+        console.error('Failed to load server config:', err);
+      }
+    };
+    loadConfig();
+  }, [baseUrl]);
 
   useEffect(() => {
     const checkVersion = async () => {
@@ -494,6 +524,26 @@ export default function App() {
   return (
     <div className="min-h-[100dvh] bg-[#0A0A0A] text-white flex flex-col items-center justify-between p-4 sm:p-8 font-['Helvetica_Neue',Arial,sans-serif] overflow-hidden select-none relative z-0" ref={containerRef}>
       
+      {/* Dynamic style overrides based on server config */}
+      <style>{`
+        .text-\\[\\#00F0FF\\] { color: ${config.primaryColor} !important; }
+        .bg-\\[\\#00F0FF\\] { background-color: ${config.primaryColor} !important; }
+        .border-\\[\\#00F0FF\\] { border-color: ${config.primaryColor} !important; }
+        .border-\\[\\#00F0FF\\]\\/20 { border-color: ${config.primaryColor}33 !important; }
+        .border-\\[\\#00F0FF\\]\\/30 { border-color: ${config.primaryColor}4d !important; }
+        .bg-\\[\\#00F0FF\\]\\/10 { background-color: ${config.primaryColor}1a !important; }
+        .from-\\[\\#00F0FF\\] { --tw-gradient-from: ${config.primaryColor} !important; --tw-gradient-to: ${config.primaryColor}00 !important; --tw-gradient-stops: var(--tw-gradient-from), var(--tw-gradient-to) !important; }
+        .via-\\[\\#00F0FF\\] { --tw-gradient-to: ${config.primaryColor}00 !important; --tw-gradient-stops: var(--tw-gradient-from), ${config.primaryColor} !important; }
+        .hover\\:bg-\\[\\#00D0DF\\]:hover { background-color: ${config.primaryColorDark} !important; }
+        .shadow-\\[10px_0_30px_\\#00F0FF50\\] { box-shadow: 10px 0 30px ${config.primaryColor}80 !important; }
+        .shadow-\\[-10px_0_30px_\\#00F0FF50\\] { box-shadow: -10px 0 30px ${config.primaryColor}80 !important; }
+        .shadow-\\[0_0_20px_rgba\\(0\\,240\\,255\\,0\\.4\\)\\] { box-shadow: 0 0 20px ${config.primaryColor}66 !important; }
+        .shadow-\\[0_10px_30px_rgba\\(0\\,240\\,255\\,0\\.2\\)\\] { box-shadow: 0 10px 30px ${config.primaryColor}33 !important; }
+        .shadow-\\[0_0_50px_rgba\\(0\\,240\\,255\\,0\\.15\\)\\] { box-shadow: 0 0 50px ${config.primaryColor}26 !important; }
+        .shadow-\\[0_0_20px_rgba\\(0\\,240\\,255\\,0\\.3\\)\\] { box-shadow: 0 0 20px ${config.primaryColor}4d !important; }
+        .shadow-\\[0_0_30px_rgba\\(0\\,240\\,255\\,0\\.2\\)\\] { box-shadow: 0 0 30px ${config.primaryColor}33 !important; }
+      `}</style>
+
       <div className="absolute inset-0 z-[-1] bg-[radial-gradient(circle_at_50%_50%,#1A1A1A_0%,#000000_100%)] pointer-events-none" />
 
       {/* Edge Portals */}

@@ -1,6 +1,9 @@
 @import "tailwindcss";
 
 @theme {
+  --color-primary: var(--primary-color, #00f0ff);
+  --color-primary-dark: var(--primary-color-dark, #00d0df);
+
   @keyframes pulse-slow {
     0%, 100% { opacity: 1; transform: scale(1); }
     50% { opacity: 0.8; transform: scale(0.98); }
