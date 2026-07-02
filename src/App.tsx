@@ -148,6 +148,9 @@ export default function App() {
 
   useEffect(() => {
     const checkVersion = async () => {
+      // Only check version and block screen for updates on mobile (Capacitor native app)
+      if (window.location.protocol !== 'capacitor:') return;
+
       try {
         const res = await fetch(`${baseUrl}/api/version`);
         if (!res.ok) return;
