@@ -1,7 +1,7 @@
 import React, { useEffect, useState, useRef } from 'react';
 import { motion, useAnimation, AnimatePresence } from 'motion/react';
 import { io, Socket } from 'socket.io-client';
-import { MonitorSmartphone, Users, History, X, Package, PenTool, Octagon, Box, Circle, Triangle, Image as ImageIcon, Sparkles } from 'lucide-react';
+import { MonitorSmartphone, Users, History, X, Package, PenTool, Octagon, Box, Circle, Triangle, Image as ImageIcon, Sparkles, Download } from 'lucide-react';
 
 interface User {
   id: string;
@@ -65,6 +65,8 @@ function ObjectIcon({ obj, size = 120, opacity = 1 }: { obj: GameObject, size?: 
 }
 
 export default function App() {
+  const CLIENT_VERSION = '1.0.0';
+  const [updateInfo, setUpdateInfo] = useState<{ hasUpdate: boolean; latestVersion: string; apkUrl: string } | null>(null);
   const [socket, setSocket] = useState<Socket | null>(null);
   const [users, setUsers] = useState<User[]>([]);
   const [gameObjects, setGameObjects] = useState<GameObject[]>([]);
@@ -110,6 +112,48 @@ export default function App() {
   const socketUrl =
     import.meta.env.VITE_SOCKET_URL?.trim() ||
     (window.location.protocol === 'capacitor:' ? 'http://10.0.2.2:3000' : '');
+
+  // Check version on load
+  const baseUrl = socketUrl || window.location.origin;
+
+  useEffect(() => {
+    const checkVersion = async () => {
+      try {
+        const res = await fetch(`${baseUrl}/api/version`);
+        if (!res.ok) return;
+        const data = await res.json();
+        
+        if (data.version && data.version !== CLIENT_VERSION) {
+          const latestParts = data.version.split('.').map(Number);
+          const currentParts = CLIENT_VERSION.split('.').map(Number);
+          
+          let hasUpdate = false;
+          for (let i = 0; i < Math.max(latestParts.length, currentParts.length); i++) {
+            const latest = latestParts[i] || 0;
+            const current = currentParts[i] || 0;
+            if (latest > current) {
+              hasUpdate = true;
+              break;
+            } else if (current > latest) {
+              break;
+            }
+          }
+          
+          if (hasUpdate) {
+            setUpdateInfo({
+              hasUpdate: true,
+              latestVersion: data.version,
+              apkUrl: data.apkUrl || 'https://github.com/GilbertoMF/throwbox-app/releases'
+            });
+          }
+        }
+      } catch (err) {
+        console.error('Failed to check app version:', err);
+      }
+    };
+
+    checkVersion();
+  }, [baseUrl]);
 
   // Better staging logic: Only pick a default if we have literally nothing selected
   useEffect(() => {
@@ -926,6 +970,58 @@ export default function App() {
                 </button>
               </div>
             </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* Update Modal Overlay */}
+      <AnimatePresence>
+        {updateInfo && updateInfo.hasUpdate && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 bg-black/90 backdrop-blur-md z-[100] flex items-center justify-center p-6"
+          >
+            <motion.div
+              initial={{ scale: 0.9, y: 20 }}
+              animate={{ scale: 1, y: 0 }}
+              transition={{ type: "spring", damping: 25, stiffness: 200 }}
+              className="w-full max-w-md bg-[#151515] border border-[#00F0FF]/30 rounded-[28px] p-8 text-center flex flex-col items-center gap-6 shadow-[0_0_50px_rgba(0,240,255,0.15)] relative overflow-hidden"
+            >
+              <div className="absolute top-0 left-0 right-0 h-[2px] bg-gradient-to-r from-transparent via-[#00F0FF] to-transparent" />
+              
+              <div className="w-16 h-16 rounded-full bg-[#00F0FF]/10 flex items-center justify-center border border-[#00F0FF]/20 animate-pulse-slow">
+                <Sparkles className="w-8 h-8 text-[#00F0FF]" />
+              </div>
+
+              <div>
+                <h2 className="text-2xl font-black uppercase tracking-wider text-white">
+                  Update Available
+                </h2>
+                <p className="text-[11px] text-[#00F0FF] uppercase tracking-[3px] font-bold mt-1">
+                  Version {updateInfo.latestVersion} is out!
+                </p>
+              </div>
+
+              <p className="text-sm text-[#888] leading-relaxed max-w-xs">
+                A new version of ThrowBox is available with improvements and compatibility updates. Please update to continue playing.
+              </p>
+
+              <div className="w-full flex flex-col gap-3 mt-2">
+                <a
+                  href={updateInfo.apkUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="w-full py-4 bg-[#00F0FF] hover:bg-[#00D0DF] text-black font-black uppercase text-xs tracking-widest transition-all rounded-xl shadow-[0_0_20px_rgba(0,240,255,0.3)] hover:scale-[1.02] active:scale-[0.98] flex items-center justify-center gap-2 cursor-pointer text-center"
+                >
+                  <Download className="w-4 h-4" /> Download APK
+                </a>
+                <div className="text-[9px] text-[#444] uppercase tracking-wider font-mono">
+                  Current Version: {CLIENT_VERSION}
+                </div>
+              </div>
+            </motion.div>
           </motion.div>
         )}
       </AnimatePresence>

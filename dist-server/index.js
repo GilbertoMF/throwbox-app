@@ -245,6 +245,12 @@ async function startServer() {
       }
     });
   });
+  app.get("/api/version", (req, res) => {
+    res.json({
+      version: process.env.LATEST_APP_VERSION || "1.0.0",
+      apkUrl: process.env.APK_DOWNLOAD_URL || "https://github.com/GilbertoMF/throwbox-app/releases"
+    });
+  });
   app.get("/api/health", (req, res) => {
     res.json({ status: "ok" });
   });
