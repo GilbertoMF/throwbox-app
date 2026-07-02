@@ -8,6 +8,15 @@ const { Pool } = pkg;
 
 async function startServer() {
   const app = express();
+
+  // Allow CORS for all API endpoints (necessary for Android webview fetch requests)
+  app.use((req, res, next) => {
+    res.header("Access-Control-Allow-Origin", "*");
+    res.header("Access-Control-Allow-Headers", "Origin, X-Requested-With, Content-Type, Accept");
+    res.header("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
+    next();
+  });
+
   const server = http.createServer(app);
   const io = new Server(server, {
     cors: {
