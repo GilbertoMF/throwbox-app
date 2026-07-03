@@ -1722,6 +1722,11 @@ export default function App() {
                 <div className="flex-1 h-[1px] bg-white/5" />
               </div>
 
+              {/* Diagnostic Log */}
+              <div className="text-[9px] text-neutral-500 font-mono text-center bg-black/40 py-1 rounded">
+                GSI: google={typeof (window as any).google} | accounts={(window as any).google?.accounts ? 'ok' : 'no'} | oauth2={(window as any).google?.accounts?.oauth2 ? 'ok' : 'no'}
+              </div>
+
               <form onSubmit={handleAuthSubmit} className="flex flex-col gap-4">
                 <div className="flex flex-col gap-1.5">
                   <label className="text-[9px] text-[#555] uppercase tracking-[2px] font-bold">E-mail</label>
