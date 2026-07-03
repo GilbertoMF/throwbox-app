@@ -390,6 +390,55 @@ export default function App() {
     fetchProfile();
   }, [sessionToken, baseUrl]);
 
+  // Trigger Google One Tap login if not logged in
+  useEffect(() => {
+    if (sessionToken) return;
+    
+    const checkInterval = setInterval(() => {
+      if (typeof (window as any).google !== "undefined" && (window as any).google.accounts) {
+        clearInterval(checkInterval);
+        
+        try {
+          (window as any).google.accounts.id.initialize({
+            client_id: "569049899903-rb5qc608qpdnt8vkqv66dl4ctkdjvnfq.apps.googleusercontent.com",
+            callback: async (response: any) => {
+              if (response && response.credential) {
+                setAuthLoading(true);
+                setAuthError(null);
+                try {
+                  const res = await fetch(`${baseUrl}/api/auth/google/one-tap`, {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ credential: response.credential })
+                  });
+                  const data = await res.json();
+                  if (res.ok && data.token) {
+                    localStorage.setItem('throwbox_session_token', data.token);
+                    setSessionToken(data.token);
+                    setUser(data.user);
+                    setIsAuthModalOpen(false);
+                  } else {
+                    setAuthError(data.error || 'Erro no login com o Google.');
+                  }
+                } catch (err: any) {
+                  setAuthError(`Erro de rede: ${err.message}`);
+                } finally {
+                  setAuthLoading(false);
+                }
+              }
+            }
+          });
+          
+          (window as any).google.accounts.id.prompt();
+        } catch (err) {
+          console.error("Failed to initialize Google One Tap:", err);
+        }
+      }
+    }, 1000);
+
+    return () => clearInterval(checkInterval);
+  }, [sessionToken, baseUrl]);
+
   const handleLinkGoogleDrive = () => {
     if (typeof (window as any).google === "undefined") {
       alert("A biblioteca do Google está carregando. Por favor, aguarde alguns instantes.");
@@ -427,12 +476,7 @@ export default function App() {
     client.requestCode();
   };
 
-  const handleGoogleLogin = () => {
-    if (typeof (window as any).google === "undefined") {
-      alert("A biblioteca do Google está carregando. Por favor, aguarde alguns instantes.");
-      return;
-    }
-
+  const triggerGooglePopupLogin = () => {
     const client = (window as any).google.accounts.oauth2.initCodeClient({
       client_id: "569049899903-rb5qc608qpdnt8vkqv66dl4ctkdjvnfq.apps.googleusercontent.com",
       scope: "openid email https://www.googleapis.com/auth/drive.file",
@@ -444,9 +488,7 @@ export default function App() {
           try {
             const res = await fetch(`${baseUrl}/api/auth/google/login`, {
               method: "POST",
-              headers: {
-                "Content-Type": "application/json"
-              },
+              headers: { "Content-Type": "application/json" },
               body: JSON.stringify({ code: response.code })
             });
             const data = await res.json();
@@ -467,6 +509,20 @@ export default function App() {
       }
     });
     client.requestCode();
+  };
+
+  const handleGoogleLogin = () => {
+    if (typeof (window as any).google === "undefined" || !(window as any).google.accounts) {
+      alert("A biblioteca do Google está carregando. Por favor, aguarde alguns instantes.");
+      return;
+    }
+    
+    (window as any).google.accounts.id.prompt((notification: any) => {
+      if (notification.isNotDisplayed() || notification.isSkippedMoment()) {
+        console.log("One Tap not displayed, falling back to popup...");
+        triggerGooglePopupLogin();
+      }
+    });
   };
 
   const handleSaveToDrive = async (objectId: string, objectName: string, drawingData: string) => {

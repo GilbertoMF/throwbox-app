@@ -458,6 +458,66 @@ async function startServer() {
       res.status(500).json({ error: err.message });
     }
   });
+  function decodeJwtPayload(token) {
+    const parts = token.split(".");
+    if (parts.length !== 3) throw new Error("Invalid JWT token format");
+    const payloadBase64 = parts[1].replace(/-/g, "+").replace(/_/g, "/");
+    const payloadJson = Buffer.from(payloadBase64, "base64").toString("utf-8");
+    return JSON.parse(payloadJson);
+  }
+  app.post("/api/auth/google/one-tap", async (req, res) => {
+    if (!pool) return res.status(500).json({ error: "No database pool" });
+    const { credential } = req.body;
+    if (!credential) return res.status(400).json({ error: "Missing credential token" });
+    try {
+      const payload = decodeJwtPayload(credential);
+      const client_id = process.env.GOOGLE_CLIENT_ID || "";
+      if (payload.aud !== client_id) {
+        return res.status(400).json({ error: "Invalid token audience" });
+      }
+      if (!payload.email) {
+        return res.status(400).json({ error: "No email address returned from Google" });
+      }
+      const emailLower = payload.email.toLowerCase().trim();
+      const userRes = await pool.query(
+        "SELECT id FROM throwbox_users WHERE email = $1",
+        [emailLower]
+      );
+      let userId = "";
+      if (userRes.rows.length > 0) {
+        userId = userRes.rows[0].id;
+      } else {
+        const salt = crypto.randomBytes(16).toString("hex");
+        const hash = crypto.randomBytes(32).toString("hex");
+        userId = crypto.randomUUID();
+        await pool.query(
+          "INSERT INTO throwbox_users (id, email, password_hash, password_salt) VALUES ($1, $2, $3, $4)",
+          [userId, emailLower, hash, salt]
+        );
+      }
+      const sessionToken = crypto.randomBytes(32).toString("hex");
+      const expiresAt = new Date(Date.now() + 30 * 24 * 60 * 60 * 1e3);
+      await pool.query(
+        "INSERT INTO throwbox_sessions (token, user_id, expires_at) VALUES ($1, $2, $3)",
+        [sessionToken, userId, expiresAt]
+      );
+      const tokenCheck = await pool.query(
+        "SELECT google_refresh_token FROM throwbox_user_tokens WHERE user_id = $1",
+        [userId]
+      );
+      const isDriveLinked = tokenCheck.rows.length > 0;
+      res.json({
+        token: sessionToken,
+        user: {
+          id: userId,
+          email: emailLower,
+          is_drive_linked: isDriveLinked
+        }
+      });
+    } catch (err) {
+      res.status(500).json({ error: err.message });
+    }
+  });
   app.post("/api/auth/google/login", async (req, res) => {
     if (!pool) return res.status(500).json({ error: "No database pool" });
     const { code } = req.body;
