@@ -3,6 +3,54 @@ import { motion, useAnimation, AnimatePresence } from 'motion/react';
 import { io, Socket } from 'socket.io-client';
 import { MonitorSmartphone, Users, History, X, Package, PenTool, Octagon, Box, Circle, Triangle, Image as ImageIcon, Sparkles, Download } from 'lucide-react';
 
+const playSound = (type: 'whoosh' | 'impact', pitchMultiplier = 1) => {
+  try {
+    const AudioContextClass = window.AudioContext || (window as any).webkitAudioContext;
+    if (!AudioContextClass) return;
+    const ctx = new AudioContextClass();
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    
+    osc.connect(gain);
+    gain.connect(ctx.destination);
+    
+    if (type === 'whoosh') {
+      osc.type = 'sine';
+      osc.frequency.setValueAtTime(120, ctx.currentTime);
+      osc.frequency.exponentialRampToValueAtTime(700, ctx.currentTime + 0.3);
+      gain.gain.setValueAtTime(0.2, ctx.currentTime);
+      gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.3);
+      osc.start();
+      osc.stop(ctx.currentTime + 0.3);
+    } else {
+      osc.type = 'triangle';
+      const baseFreq = 440 * pitchMultiplier;
+      osc.frequency.setValueAtTime(baseFreq, ctx.currentTime);
+      osc.frequency.exponentialRampToValueAtTime(baseFreq / 2.5, ctx.currentTime + 0.35);
+      gain.gain.setValueAtTime(0.3, ctx.currentTime);
+      gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.35);
+      osc.start();
+      osc.stop(ctx.currentTime + 0.35);
+    }
+  } catch (e) {
+    console.warn('Audio synthesis failed:', e);
+  }
+};
+
+const triggerHaptic = (type: 'throw' | 'receive') => {
+  if (typeof navigator !== 'undefined' && navigator.vibrate) {
+    try {
+      if (type === 'throw') {
+        navigator.vibrate(60);
+      } else {
+        navigator.vibrate([40, 50, 80]);
+      }
+    } catch (e) {
+      console.warn('Haptic vibration failed:', e);
+    }
+  }
+};
+
 interface User {
   id: string;
   position: number;
@@ -29,6 +77,17 @@ interface TransferRecord {
   receiverPosition: number;
   objectName: string;
   timestamp: number;
+}
+
+interface Particle {
+  id: string;
+  x: number;
+  y: number;
+  vx: number;
+  vy: number;
+  size: number;
+  color: string;
+  opacity: number;
 }
 
 function ObjectIcon({ obj, size = 120, opacity = 1 }: { obj: GameObject, size?: number, opacity?: number }) {
@@ -68,6 +127,10 @@ export default function App() {
   const CLIENT_VERSION = '1.0.0';
   const [updateInfo, setUpdateInfo] = useState<{ hasUpdate: boolean; latestVersion: string; apkUrl: string } | null>(null);
   const [config, setConfig] = useState({ primaryColor: '#00F0FF', primaryColorDark: '#00D0DF' });
+  const [roomCode, setRoomCode] = useState('global');
+  const [inputRoomCode, setInputRoomCode] = useState('');
+  const [motionEnabled, setMotionEnabled] = useState(false);
+  const [particles, setParticles] = useState<Particle[]>([]);
   const [socket, setSocket] = useState<Socket | null>(null);
   const [users, setUsers] = useState<User[]>([]);
   const [gameObjects, setGameObjects] = useState<GameObject[]>([]);
@@ -91,6 +154,85 @@ export default function App() {
   useEffect(() => {
     setSelectedColor(config.primaryColor);
   }, [config.primaryColor]);
+
+  const spawnPortalParticles = (direction: 'left' | 'right' | 'up' | 'down', color: string) => {
+    const count = 25;
+    const newParticles: Particle[] = [];
+    const width = window.innerWidth;
+    const height = window.innerHeight;
+
+    let startX = 0;
+    let startY = 0;
+
+    if (direction === 'left') {
+      startX = 10;
+      startY = height / 2;
+    } else if (direction === 'right') {
+      startX = width - 10;
+      startY = height / 2;
+    } else if (direction === 'up') {
+      startX = width / 2;
+      startY = 10;
+    } else if (direction === 'down') {
+      startX = width / 2;
+      startY = height - 10;
+    }
+
+    for (let i = 0; i < count; i++) {
+      let angle = 0;
+      if (direction === 'left') {
+        angle = (Math.random() - 0.5) * Math.PI; // inward right
+      } else if (direction === 'right') {
+        angle = Math.PI + (Math.random() - 0.5) * Math.PI; // inward left
+      } else if (direction === 'up') {
+        angle = Math.PI / 2 + (Math.random() - 0.5) * Math.PI; // inward down
+      } else if (direction === 'down') {
+        angle = -Math.PI / 2 + (Math.random() - 0.5) * Math.PI; // inward up
+      }
+
+      const speed = 3 + Math.random() * 8;
+      newParticles.push({
+        id: `${Date.now()}-${i}-${Math.random()}`,
+        x: direction === 'left' || direction === 'right' ? startX : Math.random() * width,
+        y: direction === 'up' || direction === 'down' ? startY : Math.random() * height,
+        vx: Math.cos(angle) * speed,
+        vy: Math.sin(angle) * speed,
+        size: 3 + Math.random() * 6,
+        color,
+        opacity: 1
+      });
+    }
+    setParticles(prev => [...prev, ...newParticles]);
+  };
+
+  useEffect(() => {
+    if (particles.length === 0) return;
+
+    let active = true;
+    let frameId = 0;
+    
+    const update = () => {
+      if (!active) return;
+      setParticles(prev => {
+        const next = prev
+          .map(p => ({
+            ...p,
+            x: p.x + p.vx,
+            y: p.y + p.vy,
+            opacity: p.opacity - 0.04
+          }))
+          .filter(p => p.opacity > 0);
+        return next;
+      });
+      frameId = requestAnimationFrame(update);
+    };
+
+    frameId = requestAnimationFrame(update);
+    return () => {
+      active = false;
+      cancelAnimationFrame(frameId);
+    };
+  }, [particles.length]);
 
   const shapeTypes = [
     { id: 'box', name: 'Cube', icon: Box },
@@ -232,6 +374,21 @@ export default function App() {
       if (data.newHolderId === newSocket.id) {
         setIncomingDirection(data.direction);
         setStagedObjectId(data.objectId); // Auto-stage the received item
+        
+        // Trigger sound, vibration, and particles
+        playSound('impact');
+        triggerHaptic('receive');
+        
+        // Find color of object
+        const objColor = gameObjects.find(o => o.id === data.objectId)?.color || config.primaryColor;
+        const oppositeDirs: Record<string, 'left' | 'right' | 'up' | 'down'> = {
+          left: 'right',
+          right: 'left',
+          up: 'down',
+          down: 'up'
+        };
+        spawnPortalParticles(oppositeDirs[data.direction], objColor);
+
         const notifId = Date.now();
         setNotification({
           id: notifId,
@@ -256,6 +413,54 @@ export default function App() {
       newSocket.disconnect();
     };
   }, [socketUrl]);
+
+  // Gyroscope flick-to-throw listener
+  const lastUpdate = useRef(0);
+  const isThresholdMet = useRef(false);
+
+  useEffect(() => {
+    if (!motionEnabled || !stagedObject || !socket) return;
+
+    const handleMotion = (event: DeviceMotionEvent) => {
+      const now = Date.now();
+      if (now - lastUpdate.current < 250) return; // Debounce sensor readings (250ms)
+
+      const acc = event.acceleration || event.accelerationIncludingGravity;
+      if (!acc) return;
+
+      const x = acc.x || 0;
+      const y = acc.y || 0;
+      
+      // Threshold for a rapid motion (m/s^2)
+      const FLICK_THRESHOLD = 20;
+
+      if (Math.abs(x) > FLICK_THRESHOLD || Math.abs(y) > FLICK_THRESHOLD) {
+        if (isThresholdMet.current) return;
+        isThresholdMet.current = true;
+        setTimeout(() => { isThresholdMet.current = false; }, 1200); // 1.2s throw lock/debounce
+        
+        lastUpdate.current = now;
+
+        // Determine dominant direction
+        if (Math.abs(x) > Math.abs(y)) {
+          if (x < 0) {
+            executeThrow('right');
+          } else {
+            executeThrow('left');
+          }
+        } else {
+          if (y < 0) {
+            executeThrow('down');
+          } else {
+            executeThrow('up');
+          }
+        }
+      }
+    };
+
+    window.addEventListener('devicemotion', handleMotion);
+    return () => window.removeEventListener('devicemotion', handleMotion);
+  }, [motionEnabled, stagedObjectId, socket, stagedObject]);
 
   // Portal visual feedback
   const [activePortal, setActivePortal] = useState<'left' | 'right' | 'up' | 'down' | null>(null);
@@ -356,6 +561,36 @@ export default function App() {
     }
   };
 
+  const executeThrow = (direction: 'left' | 'right' | 'up' | 'down') => {
+    if (!socket || !stagedObject) return;
+
+    playSound('whoosh');
+    triggerHaptic('throw');
+    spawnPortalParticles(direction, stagedObject.color);
+
+    setActivePortal(direction);
+
+    let targetX = 0;
+    let targetY = 0;
+    if (direction === 'right') targetX = window.innerWidth * 0.8;
+    else if (direction === 'left') targetX = -window.innerWidth * 0.8;
+    else if (direction === 'down') targetY = window.innerHeight * 0.8;
+    else if (direction === 'up') targetY = -window.innerHeight * 0.8;
+
+    controls.start({
+      x: targetX,
+      y: targetY,
+      scale: 0.5,
+      opacity: 0,
+      rotate: direction === 'left' || direction === 'up' ? -45 : 45,
+      transition: { duration: 0.2 }
+    }).then(() => {
+      socket.emit('transfer-object', { objectId: stagedObject.id, direction });
+      setStagedObjectId(null);
+      setTimeout(() => setActivePortal(null), 500);
+    });
+  };
+
   const handleDragEnd = (event: any, info: any) => {
     if (!socket || !stagedObject) return;
     const x = info.offset.x;
@@ -363,29 +598,13 @@ export default function App() {
     const threshold = 120;
 
     if (x > threshold) {
-      setActivePortal('right');
-      controls.start({ x: window.innerWidth * 0.8, y: 0, scale: 0.5, opacity: 0, rotate: 45, transition: { duration: 0.2 } }).then(() => {
-        socket.emit('transfer-object', { objectId: stagedObject.id, direction: 'right' });
-        setTimeout(() => setActivePortal(null), 500);
-      });
+      executeThrow('right');
     } else if (x < -threshold) {
-      setActivePortal('left');
-      controls.start({ x: -window.innerWidth * 0.8, y: 0, scale: 0.5, opacity: 0, rotate: -45, transition: { duration: 0.2 } }).then(() => {
-        socket.emit('transfer-object', { objectId: stagedObject.id, direction: 'left' });
-        setTimeout(() => setActivePortal(null), 500);
-      });
+      executeThrow('left');
     } else if (y > threshold) {
-      setActivePortal('down');
-      controls.start({ x: 0, y: window.innerHeight * 0.8, scale: 0.5, opacity: 0, rotate: 45, transition: { duration: 0.2 } }).then(() => {
-        socket.emit('transfer-object', { objectId: stagedObject.id, direction: 'down' });
-        setTimeout(() => setActivePortal(null), 500);
-      });
+      executeThrow('down');
     } else if (y < -threshold) {
-      setActivePortal('up');
-      controls.start({ x: 0, y: -window.innerHeight * 0.8, scale: 0.5, opacity: 0, rotate: -45, transition: { duration: 0.2 } }).then(() => {
-        socket.emit('transfer-object', { objectId: stagedObject.id, direction: 'up' });
-        setTimeout(() => setActivePortal(null), 500);
-      });
+      executeThrow('up');
     } else {
       controls.start({ x: 0, y: 0, transition: { type: 'spring', stiffness: 400, damping: 30 } });
     }
@@ -547,6 +766,23 @@ export default function App() {
         .shadow-\\[0_0_30px_rgba\\(0\\,240\\,255\\,0\\.2\\)\\] { box-shadow: 0 0 30px ${config.primaryColor}33 !important; }
       `}</style>
 
+      {/* Render Portal Particles */}
+      {particles.map(p => (
+        <div 
+          key={p.id}
+          className="absolute rounded-full pointer-events-none z-50 shadow-glow"
+          style={{
+            left: p.x,
+            top: p.y,
+            width: p.size,
+            height: p.size,
+            backgroundColor: p.color,
+            opacity: p.opacity,
+            boxShadow: `0 0 10px ${p.color}, 0 0 20px ${p.color}`
+          }}
+        />
+      ))}
+
       <div className="absolute inset-0 z-[-1] bg-[radial-gradient(circle_at_50%_50%,#1A1A1A_0%,#000000_100%)] pointer-events-none" />
 
       {/* Edge Portals */}
@@ -610,6 +846,101 @@ export default function App() {
             <div className="text-[11px] text-[#444] uppercase tracking-[1px]">REDE ATUAL</div>
             <div className="font-bold">{users.length} / 5 JOGADORES</div>
           </div>
+        </div>
+      </div>
+
+      {/* Room Selection & Motion Controls Settings Bar */}
+      <div className="w-full max-w-lg mt-4 flex flex-col items-center gap-3 bg-[#111]/60 border border-white/5 rounded-2xl p-4 backdrop-blur-md z-20">
+        <div className="w-full flex items-center justify-between">
+          <div className="flex flex-col">
+            <span className="text-[9px] text-[#555] uppercase tracking-[2px] font-bold">LOBBY / SALA</span>
+            <span className="text-xs font-mono font-bold tracking-[1px] text-white">
+              {roomCode === 'global' ? '🌐 LOBBY PÚBLICO' : `🔒 SALA: ${roomCode}`}
+            </span>
+          </div>
+
+          <div className="flex items-center gap-2">
+            {roomCode === 'global' ? (
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => {
+                    const code = Math.random().toString(36).substring(2, 6).toUpperCase();
+                    setRoomCode(code);
+                    socket?.emit('join-room', { roomCode: code });
+                  }}
+                  className="px-3 py-1.5 bg-[#222] border border-[#333] hover:border-[#00F0FF]/30 text-white rounded-lg text-[10px] font-black uppercase tracking-[1px] transition-colors"
+                >
+                  Criar Sala
+                </button>
+                <div className="flex items-center bg-[#222] border border-[#333] rounded-lg px-2 py-1">
+                  <input
+                    type="text"
+                    placeholder="CÓDIGO"
+                    value={inputRoomCode}
+                    onChange={(e) => setInputRoomCode(e.target.value.toUpperCase().slice(0, 4))}
+                    className="w-14 bg-transparent outline-none border-none text-[10px] font-mono font-bold tracking-[1px] text-white"
+                  />
+                  <button
+                    onClick={() => {
+                      if (inputRoomCode.length === 4) {
+                        setRoomCode(inputRoomCode);
+                        socket?.emit('join-room', { roomCode: inputRoomCode });
+                      }
+                    }}
+                    className="ml-1 text-[10px] font-black text-[#00F0FF] hover:text-white transition-colors"
+                  >
+                    Entrar
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <button
+                onClick={() => {
+                  setRoomCode('global');
+                  socket?.emit('join-room', { roomCode: 'global' });
+                }}
+                className="px-3 py-1.5 bg-red-950/40 border border-red-500/20 hover:bg-red-900/60 text-red-400 rounded-lg text-[10px] font-black uppercase tracking-[1px] transition-all"
+              >
+                Sair da Sala
+              </button>
+            )}
+          </div>
+        </div>
+
+        {/* Gyroscope Motion Controls Toggle */}
+        <div className="w-full flex items-center justify-between pt-2 border-t border-white/5">
+          <div className="flex flex-col">
+            <span className="text-[9px] text-[#555] uppercase tracking-[2px] font-bold">CONTROLE DE MOVIMENTO</span>
+            <span className="text-[10px] text-[#888]">
+              {motionEnabled ? '📱 Balance para arremessar itens' : '📴 Controles físicos desativados'}
+            </span>
+          </div>
+
+          <button
+            onClick={() => {
+              if (!motionEnabled) {
+                // Request Permission on iOS if available
+                if (typeof DeviceMotionEvent !== 'undefined' && (DeviceMotionEvent as any).requestPermission) {
+                  (DeviceMotionEvent as any).requestPermission()
+                    .then((permissionState: string) => {
+                      if (permissionState === 'granted') {
+                        setMotionEnabled(true);
+                      } else {
+                        alert('Permissão de movimento negada pelo usuário.');
+                      }
+                    })
+                    .catch(console.error);
+                } else {
+                  setMotionEnabled(true);
+                }
+              } else {
+                setMotionEnabled(false);
+              }
+            }}
+            className={`px-3 py-1 bg-[#222] border rounded-lg text-[9px] font-bold uppercase transition-all ${motionEnabled ? 'text-[#00F0FF] border-[#00F0FF]/30' : 'text-neutral-500 border-neutral-800'}`}
+          >
+            {motionEnabled ? 'Ativo' : 'Inativo'}
+          </button>
         </div>
       </div>
 

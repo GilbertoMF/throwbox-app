@@ -64,7 +64,31 @@ async function startServer() {
   const STATE_ROW_ID = "global";
   let persistTimer: NodeJS.Timeout | null = null;
 
-  let users: User[] = [];
+  interface Room {
+    code: string;
+    users: User[];
+    gameObjects: GameObject[];
+    transferHistory: TransferRecord[];
+  }
+
+  const rooms = new Map<string, Room>();
+
+  const DEFAULT_OBJECTS: GameObject[] = [
+    { id: "obj_tesseract", name: "TESSERACT", category: "ARTIFACT", shape: "box", color: "#00F0FF", holderId: null },
+    { id: "obj_astral_sphere", name: "ASTRAL_SPHERE", category: "GEOMETRY", shape: "sphere", color: "#FF00FF", holderId: null },
+    { id: "obj_prism_core", name: "PRISM_CORE", category: "ARTIFACT", shape: "octahedron", color: "#00FF00", holderId: null },
+    { id: "obj_data_cube", name: "DATA_CUBE", category: "GEOMETRY", shape: "box", color: "#FFFF00", holderId: null },
+    { id: "obj_void_orb", name: "VOID_ORB", category: "UNKNOWN", shape: "sphere", color: "#FF0000", holderId: null }
+  ];
+
+  // Initialize global room
+  rooms.set("global", {
+    code: "global",
+    users: [],
+    gameObjects: [...DEFAULT_OBJECTS],
+    transferHistory: []
+  });
+
   const MAX_USERS = 5;
   const GRID_SIZE = 3;
   
@@ -76,16 +100,6 @@ async function startServer() {
     { x: 1, y: 2 }, // Down
     { x: 0, y: 1 }, // Left
   ];
-  
-  let gameObjects: GameObject[] = [
-    { id: "obj_tesseract", name: "TESSERACT", category: "ARTIFACT", shape: "box", color: "#00F0FF", holderId: null },
-    { id: "obj_astral_sphere", name: "ASTRAL_SPHERE", category: "GEOMETRY", shape: "sphere", color: "#FF00FF", holderId: null },
-    { id: "obj_prism_core", name: "PRISM_CORE", category: "ARTIFACT", shape: "octahedron", color: "#00FF00", holderId: null },
-    { id: "obj_data_cube", name: "DATA_CUBE", category: "GEOMETRY", shape: "box", color: "#FFFF00", holderId: null },
-    { id: "obj_void_orb", name: "VOID_ORB", category: "UNKNOWN", shape: "sphere", color: "#FF0000", holderId: null }
-  ];
-
-  let transferHistory: TransferRecord[] = [];
 
   async function loadPersistedState() {
     if (!pool) return;
@@ -106,13 +120,14 @@ async function startServer() {
         [STATE_ROW_ID]
       );
 
+      const globalRoom = rooms.get("global")!;
       if (rows.length > 0) {
         const data = rows[0];
         if (Array.isArray(data.game_objects) && data.game_objects.length > 0) {
-          gameObjects = data.game_objects.map((obj: any) => ({ ...obj, holderId: null }));
+          globalRoom.gameObjects = data.game_objects.map((obj: any) => ({ ...obj, holderId: null }));
         }
         if (Array.isArray(data.transfer_history)) {
-          transferHistory = data.transfer_history.slice(0, 50);
+          globalRoom.transferHistory = data.transfer_history.slice(0, 50);
         }
         console.log("Loaded state from Postgres");
       } else {
@@ -129,7 +144,8 @@ async function startServer() {
     if (persistTimer) clearTimeout(persistTimer);
 
     persistTimer = setTimeout(async () => {
-      const persistedObjects = gameObjects.map((obj) => ({ ...obj, holderId: null }));
+      const globalRoom = rooms.get("global")!;
+      const persistedObjects = globalRoom.gameObjects.map((obj) => ({ ...obj, holderId: null }));
 
       try {
         await pool.query(
@@ -142,30 +158,80 @@ async function startServer() {
           [
             STATE_ROW_ID,
             JSON.stringify(persistedObjects),
-            JSON.stringify(transferHistory.slice(0, 50))
+            JSON.stringify(globalRoom.transferHistory.slice(0, 50))
           ]
         );
+        console.log("Persisted state to Postgres");
       } catch (err) {
-        console.error("Postgres save failed:", err);
+        console.error("Postgres persist failed:", err);
       }
     }, 1000);
   }
 
   await loadPersistedState();
 
-  io.on("connection", (socket) => {
-    console.log("User connected:", socket.id);
+  const socketRoomMap = new Map<string, string>(); // socket.id -> roomCode
+
+  function joinRoom(socket: any, targetRoomCode: string) {
+    const prevRoomCode = socketRoomMap.get(socket.id);
     
-    if (users.length >= MAX_USERS) {
-      socket.emit("room-full");
-      return;
+    // 1. Remove from previous room if any
+    if (prevRoomCode) {
+      const prevRoom = rooms.get(prevRoomCode);
+      if (prevRoom) {
+        prevRoom.users = prevRoom.users.filter(u => u.id !== socket.id);
+        
+        // Re-assign objects held by the leaving user to the first remaining user
+        prevRoom.gameObjects.forEach(obj => {
+          if (obj.holderId === socket.id) {
+            obj.holderId = prevRoom.users.length > 0 ? prevRoom.users[0].id : null;
+          }
+        });
+
+        socket.leave(prevRoomCode);
+        
+        // Notify remaining users in previous room
+        io.to(prevRoomCode).emit("state-update", {
+          users: prevRoom.users,
+          gameObjects: prevRoom.gameObjects,
+          transferHistory: prevRoom.transferHistory
+        });
+
+        // Clean up empty private rooms
+        if (prevRoomCode !== "global" && prevRoom.users.length === 0) {
+          rooms.delete(prevRoomCode);
+          console.log(`Cleaned up empty room: ${prevRoomCode}`);
+        }
+      }
     }
 
-    // Find first available preset cross position
+    // 2. Initialize target room if it doesn't exist (only private rooms)
+    let room = rooms.get(targetRoomCode);
+    if (!room) {
+      room = {
+        code: targetRoomCode,
+        users: [],
+        gameObjects: DEFAULT_OBJECTS.map(obj => ({ 
+          ...obj, 
+          id: `${obj.id}_${Math.random().toString(36).substring(2, 6)}` 
+        })),
+        transferHistory: []
+      };
+      rooms.set(targetRoomCode, room);
+      console.log(`Created new private room: ${targetRoomCode}`);
+    }
+
+    // Check if room is full
+    if (room.users.length >= MAX_USERS) {
+      socket.emit("room-full");
+      return false;
+    }
+
+    // 3. Find first available preset cross position in the new room
     let newGridX = -1;
     let newGridY = -1;
     for (const pos of CROSS_POSITIONS) {
-      if (!users.some(u => u.gridX === pos.x && u.gridY === pos.y)) {
+      if (!room.users.some(u => u.gridX === pos.x && u.gridY === pos.y)) {
         newGridX = pos.x;
         newGridY = pos.y;
         break;
@@ -173,7 +239,7 @@ async function startServer() {
     }
 
     let newPlayerNumber = 1;
-    while (users.some(u => u.playerNumber === newPlayerNumber)) {
+    while (room.users.some(u => u.playerNumber === newPlayerNumber)) {
       newPlayerNumber++;
     }
 
@@ -184,27 +250,60 @@ async function startServer() {
       gridX: newGridX,
       gridY: newGridY
     };
-    users.push(newUser);
+    room.users.push(newUser);
+    socketRoomMap.set(socket.id, targetRoomCode);
+    socket.join(targetRoomCode);
 
-    if (users.length === 1) {
-      gameObjects.forEach(obj => {
+    // If first user, assign unassigned objects to them
+    if (room.users.length === 1) {
+      room.gameObjects.forEach(obj => {
         if (!obj.holderId) obj.holderId = socket.id;
       });
     }
 
-    io.emit("state-update", { users, gameObjects, transferHistory });
+    console.log(`User ${socket.id} joined room ${targetRoomCode}`);
+
+    // Send state-update to the target room
+    io.to(targetRoomCode).emit("state-update", {
+      users: room.users,
+      gameObjects: room.gameObjects,
+      transferHistory: room.transferHistory
+    });
+
+    if (targetRoomCode === "global") {
+      schedulePersist();
+    }
+    return true;
+  }
+
+  io.on("connection", (socket) => {
+    console.log("User connected:", socket.id);
+    
+    // Automatically join the global room on connection (supports legacy clients)
+    joinRoom(socket, "global");
+
+    socket.on("join-room", (data: { roomCode: string }) => {
+      const targetRoom = data.roomCode?.trim().toUpperCase();
+      if (!targetRoom) return;
+      joinRoom(socket, targetRoom);
+    });
 
     socket.on("transfer-object", (data: { objectId: string, direction: "left" | "right" | "up" | "down" }) => {
-      const userIndex = users.findIndex(u => u.id === socket.id);
+      const roomCode = socketRoomMap.get(socket.id);
+      if (!roomCode) return;
+      const room = rooms.get(roomCode);
+      if (!room) return;
+
+      const userIndex = room.users.findIndex(u => u.id === socket.id);
       if (userIndex === -1) return;
       
-      const objParams = gameObjects.find(o => o.id === data.objectId);
+      const objParams = room.gameObjects.find(o => o.id === data.objectId);
       if (!objParams || objParams.holderId !== socket.id) return;
 
-      const senderUser = users[userIndex];
+      const senderUser = room.users[userIndex];
       let targetUser = null;
 
-      if (users.length > 1) {
+      if (room.users.length > 1) {
         let targetX = senderUser.gridX;
         let targetY = senderUser.gridY;
 
@@ -214,12 +313,12 @@ async function startServer() {
           else if (data.direction === "down") targetY = (targetY + 1) % GRID_SIZE;
           else if (data.direction === "up") targetY = (targetY - 1 + GRID_SIZE) % GRID_SIZE;
 
-          targetUser = users.find(u => u.gridX === targetX && u.gridY === targetY);
+          targetUser = room.users.find(u => u.gridX === targetX && u.gridY === targetY);
           if (targetUser) break;
         }
 
         if (!targetUser) {
-          targetUser = users.find(u => u.id !== socket.id);
+          targetUser = room.users.find(u => u.id !== socket.id);
         }
       }
 
@@ -236,22 +335,34 @@ async function startServer() {
           objectName: objParams.name,
           timestamp
         };
-        transferHistory.unshift(record);
-        if (transferHistory.length > 50) transferHistory.pop();
+        room.transferHistory.unshift(record);
+        if (room.transferHistory.length > 50) room.transferHistory.pop();
 
-        io.emit("object-transferred", {
+        io.to(roomCode).emit("object-transferred", {
           senderId: senderUser.id,
           newHolderId: targetUser.id,
           direction: data.direction,
           record,
           objectId: objParams.id
         });
-        io.emit("state-update", { users, gameObjects, transferHistory });
-        schedulePersist();
+        io.to(roomCode).emit("state-update", { 
+          users: room.users, 
+          gameObjects: room.gameObjects, 
+          transferHistory: room.transferHistory 
+        });
+        
+        if (roomCode === "global") {
+          schedulePersist();
+        }
       }
     });
 
     socket.on("create-drawing", (data: { drawingData?: string, color: string, shape?: 'box' | 'sphere' | 'octahedron' | 'plane', name?: string }) => {
+      const roomCode = socketRoomMap.get(socket.id);
+      if (!roomCode) return;
+      const room = rooms.get(roomCode);
+      if (!room) return;
+
       const newObj: GameObject = {
         id: `obj_${data.shape || 'draw'}_${Math.random().toString(36).substring(2, 9)}`,
         name: data.name || `OBJECT_${Math.floor(Math.random() * 1000)}`,
@@ -261,17 +372,30 @@ async function startServer() {
         holderId: socket.id,
         drawingData: data.drawingData
       };
-      gameObjects.push(newObj);
-      io.emit("state-update", { users, gameObjects, transferHistory });
-      schedulePersist();
+      room.gameObjects.push(newObj);
+      
+      io.to(roomCode).emit("state-update", { 
+        users: room.users, 
+        gameObjects: room.gameObjects, 
+        transferHistory: room.transferHistory 
+      });
+
+      if (roomCode === "global") {
+        schedulePersist();
+      }
     });
 
     socket.on("dragging-object", (data: { objectId: string, senderLeft: number, senderTop: number, senderWidth: number, senderHeight: number, direction: 'left' | 'right' | 'up' | 'down', senderId: string }) => {
-      const senderUser = users.find(u => u.id === socket.id);
+      const roomCode = socketRoomMap.get(socket.id);
+      if (!roomCode) return;
+      const room = rooms.get(roomCode);
+      if (!room) return;
+
+      const senderUser = room.users.find(u => u.id === socket.id);
       if (!senderUser) return;
       
       let targetUser = null;
-      if (users.length > 1) {
+      if (room.users.length > 1) {
         let targetX = senderUser.gridX;
         let targetY = senderUser.gridY;
 
@@ -281,7 +405,7 @@ async function startServer() {
           else if (data.direction === "down") targetY = (targetY + 1) % GRID_SIZE;
           else if (data.direction === "up") targetY = (targetY - 1 + GRID_SIZE) % GRID_SIZE;
 
-          targetUser = users.find(u => u.gridX === targetX && u.gridY === targetY);
+          targetUser = room.users.find(u => u.gridX === targetX && u.gridY === targetY);
           if (targetUser) break;
         }
       }
@@ -301,27 +425,55 @@ async function startServer() {
     });
 
     socket.on("reset-state", () => {
-       if (users.length > 0) {
-         gameObjects.forEach(obj => obj.holderId = users[0].id);
-         transferHistory = [];
-         io.emit("state-update", { users, gameObjects, transferHistory });
-         schedulePersist();
-       }
+      const roomCode = socketRoomMap.get(socket.id);
+      if (!roomCode) return;
+      const room = rooms.get(roomCode);
+      if (!room) return;
+
+      if (room.users.length > 0) {
+        room.gameObjects.forEach(obj => obj.holderId = room.users[0].id);
+        room.transferHistory = [];
+        io.to(roomCode).emit("state-update", { 
+          users: room.users, 
+          gameObjects: room.gameObjects, 
+          transferHistory: room.transferHistory 
+        });
+        
+        if (roomCode === "global") {
+          schedulePersist();
+        }
+      }
     });
 
     socket.on("disconnect", () => {
-      const index = users.findIndex(u => u.id === socket.id);
-      if (index !== -1) {
-        users.splice(index, 1);
-        users.forEach((u, i) => u.position = i);
+      console.log("User disconnected:", socket.id);
+      const roomCode = socketRoomMap.get(socket.id);
+      if (roomCode) {
+        const room = rooms.get(roomCode);
+        if (room) {
+          room.users = room.users.filter(u => u.id !== socket.id);
+          
+          // Re-assign object ownership
+          room.gameObjects.forEach(obj => {
+            if (obj.holderId === socket.id) {
+              obj.holderId = room.users.length > 0 ? room.users[0].id : null;
+            }
+          });
 
-        gameObjects.forEach(obj => {
-          if (obj.holderId === socket.id) {
-            obj.holderId = users.length > 0 ? users[0].id : null;
+          io.to(roomCode).emit("state-update", { 
+            users: room.users, 
+            gameObjects: room.gameObjects, 
+            transferHistory: room.transferHistory 
+          });
+
+          if (roomCode === "global") {
+            schedulePersist();
+          } else if (room.users.length === 0) {
+            rooms.delete(roomCode);
+            console.log(`Cleaned up empty room: ${roomCode}`);
           }
-        });
-
-        io.emit("state-update", { users, gameObjects, transferHistory });
+        }
+        socketRoomMap.delete(socket.id);
       }
     });
   });
