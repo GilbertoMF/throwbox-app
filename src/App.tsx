@@ -596,6 +596,55 @@ export default function App() {
     }
   };
 
+  const scanAndImportFromDrive = async () => {
+    if (!sessionToken || !user?.is_drive_linked || !socket) return;
+    
+    try {
+      const res = await fetch(`${baseUrl}/api/drive/list`, {
+        headers: {
+          'Authorization': `Bearer ${sessionToken}`
+        }
+      });
+      const data = await res.json();
+      if (res.ok && data.files && data.files.length > 0) {
+        let importCount = 0;
+        for (const file of data.files) {
+          const alreadyExists = gameObjects.some(
+            obj => obj.holderId === myId && (obj.name === file.name || obj.drawingData === file.drawingData)
+          );
+          if (!alreadyExists) {
+            socket.emit('create-drawing', {
+              drawingData: file.drawingData,
+              color: '#00F0FF',
+              shape: 'plane',
+              name: file.name
+            });
+            importCount++;
+          }
+        }
+        if (importCount > 0) {
+          const notifId = Date.now();
+          setNotification({
+            id: notifId,
+            message: `GOOGLE DRIVE: Importou ${importCount} desenhos!`
+          });
+          setTimeout(() => setNotification(prev => prev?.id === notifId ? null : prev), 4000);
+        }
+      }
+    } catch (err) {
+      console.error("Failed to scan and import from Google Drive:", err);
+    }
+  };
+
+  useEffect(() => {
+    if (sessionToken && user?.is_drive_linked && socket) {
+      const timer = setTimeout(() => {
+        scanAndImportFromDrive();
+      }, 2000);
+      return () => clearTimeout(timer);
+    }
+  }, [sessionToken, user?.is_drive_linked, !!socket]);
+
   const handleAuthSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setAuthError(null);

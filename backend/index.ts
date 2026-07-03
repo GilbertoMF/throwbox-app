@@ -848,6 +848,109 @@ async function startServer() {
     }
   });
 
+  app.get("/api/drive/list", async (req, res) => {
+    if (!pool) return res.status(500).json({ error: "No database pool" });
+    const authHeader = req.headers.authorization;
+    if (!authHeader || !authHeader.startsWith("Bearer ")) {
+      return res.status(401).json({ error: "No token" });
+    }
+    const token = authHeader.split(" ")[1];
+
+    try {
+      // 1. Verify user session and get refresh token
+      const userRes = await pool.query(
+        `SELECT u.id, t.google_refresh_token 
+         FROM throwbox_sessions s
+         JOIN throwbox_users u ON s.user_id = u.id
+         JOIN throwbox_user_tokens t ON u.id = t.user_id
+         WHERE s.token = $1 AND s.expires_at > NOW()`,
+        [token]
+      );
+      if (userRes.rows.length === 0) {
+        return res.status(401).json({ error: "Sua conta do Google Drive não está vinculada." });
+      }
+      const userId = userRes.rows[0].id;
+      const refreshToken = userRes.rows[0].google_refresh_token;
+
+      // 2. Refresh Google Access Token
+      const client_id = process.env.GOOGLE_CLIENT_ID || "";
+      const client_secret = process.env.GOOGLE_CLIENT_SECRET || "";
+      const refreshResponse = await fetch("https://oauth2.googleapis.com/token", {
+        method: "POST",
+        headers: { "Content-Type": "application/x-www-form-urlencoded" },
+        body: new URLSearchParams({
+          client_id,
+          client_secret,
+          refresh_token: refreshToken,
+          grant_type: "refresh_token",
+        }).toString(),
+      });
+      const refreshData: any = await refreshResponse.json();
+      if (!refreshResponse.ok || !refreshData.access_token) {
+        return res.status(400).json({ error: "Falha ao renovar acesso do Google Drive", details: refreshData });
+      }
+      const accessToken = refreshData.access_token;
+
+      // 3. Search for "ThrowBox" folder
+      const searchResponse = await fetch(
+        "https://www.googleapis.com/drive/v3/files?q=" + encodeURIComponent("name='ThrowBox' and mimeType='application/vnd.google-apps.folder' and trashed=false"),
+        {
+          headers: { "Authorization": `Bearer ${accessToken}` }
+        }
+      );
+      const searchData: any = await searchResponse.json();
+      if (!searchData.files || searchData.files.length === 0) {
+        return res.json({ files: [] });
+      }
+      const folderId = searchData.files[0].id;
+
+      // 4. List files inside "ThrowBox" folder
+      const filesResponse = await fetch(
+        "https://www.googleapis.com/drive/v3/files?q=" + encodeURIComponent(`'${folderId}' in parents and trashed=false`) + "&fields=files(id,name)",
+        {
+          headers: { "Authorization": `Bearer ${accessToken}` }
+        }
+      );
+      const filesData: any = await filesResponse.json();
+      if (!filesData.files) {
+        return res.json({ files: [] });
+      }
+
+      // 5. Download content for each file
+      const doodles = [];
+      for (const file of filesData.files) {
+        try {
+          const contentResponse = await fetch(
+            `https://www.googleapis.com/drive/v3/files/${file.id}?alt=media`,
+            {
+              headers: { "Authorization": `Bearer ${accessToken}` }
+            }
+          );
+          if (contentResponse.ok) {
+            const arrayBuffer = await contentResponse.arrayBuffer();
+            const base64 = Buffer.from(arrayBuffer).toString("base64");
+            let originalName = file.name;
+            const lastUnderscore = file.name.lastIndexOf("_");
+            if (lastUnderscore !== -1) {
+              originalName = file.name.substring(0, lastUnderscore);
+            }
+            doodles.push({
+              id: file.id,
+              name: originalName,
+              drawingData: `data:image/png;base64,${base64}`
+            });
+          }
+        } catch (fileErr) {
+          console.error(`Failed to download file ${file.id}:`, fileErr);
+        }
+      }
+
+      res.json({ files: doodles });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
   app.post("/api/drive/save", async (req, res) => {
     if (!pool) return res.status(500).json({ error: "No database pool" });
     const authHeader = req.headers.authorization;
