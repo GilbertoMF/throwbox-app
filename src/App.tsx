@@ -479,7 +479,7 @@ export default function App() {
   const triggerGooglePopupLogin = () => {
     const client = (window as any).google.accounts.oauth2.initCodeClient({
       client_id: "569049899903-rb5qc608qpdnt8vkqv66dl4ctkdjvnfq.apps.googleusercontent.com",
-      scope: "openid email https://www.googleapis.com/auth/drive.file",
+      scope: "openid email",
       ux_mode: "popup",
       callback: async (response: any) => {
         if (response && response.code) {
