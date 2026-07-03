@@ -4,4 +4,5 @@
     <string name="title_activity_main">Throwbox</string>
     <string name="package_name">com.throwbox.app</string>
     <string name="custom_url_scheme">com.throwbox.app</string>
+    <string name="server_client_id">569049899903-rb5qc608qpdnt8vkqv66dl4ctkdjvnfq.apps.googleusercontent.com</string>
 </resources>

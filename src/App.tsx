@@ -2,6 +2,8 @@ import React, { useEffect, useState, useRef } from 'react';
 import { motion, useAnimation, AnimatePresence } from 'motion/react';
 import { io, Socket } from 'socket.io-client';
 import { MonitorSmartphone, Users, History, X, Package, PenTool, Octagon, Box, Circle, Triangle, Image as ImageIcon, Sparkles, Download } from 'lucide-react';
+import { Capacitor } from '@capacitor/core';
+import { GoogleAuth } from '@codetrix-studio/capacitor-google-auth';
 
 const playSound = (type: 'whoosh' | 'impact', pitchMultiplier = 1) => {
   try {
@@ -136,6 +138,17 @@ function ObjectIcon({ obj, size = 120, opacity = 1 }: { obj: GameObject, size?: 
 export default function App() {
   const CLIENT_VERSION = '1.0.0';
   
+  // Initialize native Google Sign-in on mount
+  useEffect(() => {
+    if (Capacitor.isNativePlatform()) {
+      try {
+        GoogleAuth.initialize();
+      } catch (e) {
+        console.warn("GoogleAuth initialize warning:", e);
+      }
+    }
+  }, []);
+
   // Auth & Google Drive States
   const [sessionToken, setSessionToken] = useState<string | null>(localStorage.getItem('throwbox_session_token'));
   const [user, setUser] = useState<{ id: string; email: string; is_drive_linked: boolean } | null>(null);
@@ -464,14 +477,43 @@ export default function App() {
     window.location.href = authUrl;
   };
 
-  const handleGoogleLogin = () => {
-    const client_id = "569049899903-rb5qc608qpdnt8vkqv66dl4ctkdjvnfq.apps.googleusercontent.com";
-    const redirect_uri = "http://localhost:3000/api/auth/google/callback";
-    const scope = "openid email";
-    const state = "login";
-    const authUrl = `https://accounts.google.com/o/oauth2/v2/auth?client_id=${client_id}&redirect_uri=${encodeURIComponent(redirect_uri)}&response_type=code&scope=${encodeURIComponent(scope)}&state=${encodeURIComponent(state)}`;
-    
-    window.location.href = authUrl;
+  const handleGoogleLogin = async () => {
+    if (Capacitor.isNativePlatform()) {
+      setAuthLoading(true);
+      setAuthError(null);
+      try {
+        const googleUser = await GoogleAuth.signIn();
+        const idToken = googleUser.authentication.idToken;
+        if (!idToken) throw new Error("ID Token não retornado pelo Google.");
+
+        const res = await fetch(`${baseUrl}/api/auth/google/one-tap`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ credential: idToken })
+        });
+        const data = await res.json();
+        if (res.ok && data.token) {
+          localStorage.setItem('throwbox_session_token', data.token);
+          setSessionToken(data.token);
+          setUser(data.user);
+          setIsAuthModalOpen(false);
+        } else {
+          setAuthError(data.error || 'Erro no login nativo com o Google.');
+        }
+      } catch (err: any) {
+        setAuthError(`Erro no login nativo: ${err.message || JSON.stringify(err)}`);
+      } finally {
+        setAuthLoading(false);
+      }
+    } else {
+      const client_id = "569049899903-rb5qc608qpdnt8vkqv66dl4ctkdjvnfq.apps.googleusercontent.com";
+      const redirect_uri = "http://localhost:3000/api/auth/google/callback";
+      const scope = "openid email";
+      const state = "login";
+      const authUrl = `https://accounts.google.com/o/oauth2/v2/auth?client_id=${client_id}&redirect_uri=${encodeURIComponent(redirect_uri)}&response_type=code&scope=${encodeURIComponent(scope)}&state=${encodeURIComponent(state)}`;
+      
+      window.location.href = authUrl;
+    }
   };
 
   const handleSaveToDrive = async (objectId: string, objectName: string, drawingData: string) => {
