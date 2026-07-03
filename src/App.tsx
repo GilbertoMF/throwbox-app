@@ -412,8 +412,7 @@ export default function App() {
     const state = searchParams.get('state');
     
     if (code) {
-      const newUrl = window.location.pathname;
-      window.history.replaceState({}, document.title, newUrl);
+      window.history.replaceState({}, document.title, '/');
       
       const processOAuthCallback = async () => {
         if (!state) return;
@@ -475,46 +474,16 @@ export default function App() {
     }
   }, [baseUrl]);
 
-
-
   const handleLinkGoogleDrive = () => {
     if (!user) return;
     const client_id = "569049899903-rb5qc608qpdnt8vkqv66dl4ctkdjvnfq.apps.googleusercontent.com";
-    const redirect_uri = "https://p01--throwbox--qhc8zm2mxs4g.code.run/api/auth/google/callback";
+    const redirect_uri = "http://localhost:3000/api/auth/google/callback";
     const scope = "https://www.googleapis.com/auth/drive.file";
     const state = `link_drive:${sessionToken}`;
     const authUrl = `https://accounts.google.com/o/oauth2/v2/auth?client_id=${client_id}&redirect_uri=${encodeURIComponent(redirect_uri)}&response_type=code&scope=${encodeURIComponent(scope)}&state=${encodeURIComponent(state)}&prompt=consent&access_type=offline`;
     
-    if (Capacitor.isNativePlatform()) {
-      window.open(authUrl, '_system');
-    } else {
-      window.location.href = authUrl;
-    }
+    window.location.href = authUrl;
   };
-
-  // Poll user profile when Drive is not linked to automatically update status if authorized externally
-  useEffect(() => {
-    let interval: any;
-    if (sessionToken && user && !user.is_drive_linked) {
-      interval = setInterval(async () => {
-        try {
-          const res = await fetch(`${baseUrl}/api/auth/me`, {
-            headers: { 'Authorization': `Bearer ${sessionToken}` }
-          });
-          const data = await res.json();
-          if (res.ok && data.user && data.user.is_drive_linked) {
-            setUser(data.user);
-            clearInterval(interval);
-          }
-        } catch (e) {
-          console.error("Erro no polling do perfil:", e);
-        }
-      }, 3000);
-    }
-    return () => {
-      if (interval) clearInterval(interval);
-    };
-  }, [sessionToken, user?.is_drive_linked, baseUrl]);
 
   const handleGoogleLogin = async () => {
     if (Capacitor.isNativePlatform()) {
