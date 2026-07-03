@@ -14,23 +14,33 @@ const playSound = (type: 'whoosh' | 'impact', pitchMultiplier = 1) => {
     osc.connect(gain);
     gain.connect(ctx.destination);
     
+    const now = ctx.currentTime;
+    
     if (type === 'whoosh') {
       osc.type = 'sine';
-      osc.frequency.setValueAtTime(120, ctx.currentTime);
-      osc.frequency.exponentialRampToValueAtTime(700, ctx.currentTime + 0.3);
-      gain.gain.setValueAtTime(0.2, ctx.currentTime);
-      gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.3);
-      osc.start();
-      osc.stop(ctx.currentTime + 0.3);
+      osc.frequency.setValueAtTime(100, now);
+      osc.frequency.linearRampToValueAtTime(600, now + 0.35);
+      
+      // Smooth attack/release to prevent clicks
+      gain.gain.setValueAtTime(0, now);
+      gain.gain.linearRampToValueAtTime(0.08, now + 0.08); // 80ms fade-in
+      gain.gain.linearRampToValueAtTime(0, now + 0.35);    // fade-out
+      
+      osc.start(now);
+      osc.stop(now + 0.4); // stop 50ms after fade-out completes
     } else {
-      osc.type = 'triangle';
-      const baseFreq = 440 * pitchMultiplier;
-      osc.frequency.setValueAtTime(baseFreq, ctx.currentTime);
-      osc.frequency.exponentialRampToValueAtTime(baseFreq / 2.5, ctx.currentTime + 0.35);
-      gain.gain.setValueAtTime(0.3, ctx.currentTime);
-      gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.35);
-      osc.start();
-      osc.stop(ctx.currentTime + 0.35);
+      osc.type = 'sine'; // sine is cleaner than triangle, avoiding clipping harmonics
+      const baseFreq = 480 * pitchMultiplier;
+      osc.frequency.setValueAtTime(baseFreq, now);
+      osc.frequency.linearRampToValueAtTime(baseFreq / 2.2, now + 0.4);
+      
+      // Fast attack/release envelope
+      gain.gain.setValueAtTime(0, now);
+      gain.gain.linearRampToValueAtTime(0.12, now + 0.02); // 20ms quick fade-in
+      gain.gain.linearRampToValueAtTime(0, now + 0.38);    // fade-out
+      
+      osc.start(now);
+      osc.stop(now + 0.42); // stop after fade-out completes
     }
   } catch (e) {
     console.warn('Audio synthesis failed:', e);
@@ -125,6 +135,17 @@ function ObjectIcon({ obj, size = 120, opacity = 1 }: { obj: GameObject, size?: 
 
 export default function App() {
   const CLIENT_VERSION = '1.0.0';
+  
+  // Auth & Google Drive States
+  const [sessionToken, setSessionToken] = useState<string | null>(localStorage.getItem('throwbox_session_token'));
+  const [user, setUser] = useState<{ id: string; email: string; is_drive_linked: boolean } | null>(null);
+  const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
+  const [authMode, setAuthMode] = useState<'login' | 'register'>('login');
+  const [authEmail, setAuthEmail] = useState('');
+  const [authPassword, setAuthPassword] = useState('');
+  const [authError, setAuthError] = useState<string | null>(null);
+  const [authLoading, setAuthLoading] = useState(false);
+  const [driveSaving, setDriveSaving] = useState<string | null>(null); // holds objectId being saved
   const [updateInfo, setUpdateInfo] = useState<{ hasUpdate: boolean; latestVersion: string; apkUrl: string } | null>(null);
   const [config, setConfig] = useState({ primaryColor: '#00F0FF', primaryColorDark: '#00D0DF' });
   const [roomCode, setRoomCode] = useState('global');
@@ -329,7 +350,157 @@ export default function App() {
 
     checkVersion();
   }, [baseUrl]);
+  // Dynamically load Google Identity Services library
+  useEffect(() => {
+    const script = document.createElement("script");
+    script.src = "https://accounts.google.com/gsi/client";
+    script.async = true;
+    script.defer = true;
+    document.body.appendChild(script);
+    return () => {
+      document.body.removeChild(script);
+    };
+  }, []);
 
+  // Fetch user profile on token change
+  useEffect(() => {
+    if (!sessionToken) {
+      setUser(null);
+      return;
+    }
+
+    const fetchProfile = async () => {
+      try {
+        const res = await fetch(`${baseUrl}/api/auth/me`, {
+          headers: {
+            'Authorization': `Bearer ${sessionToken}`
+          }
+        });
+        const data = await res.json();
+        if (res.ok && data.user) {
+          setUser(data.user);
+        } else {
+          localStorage.removeItem('throwbox_session_token');
+          setSessionToken(null);
+        }
+      } catch (err) {
+        console.error("Failed to fetch user profile:", err);
+      }
+    };
+    fetchProfile();
+  }, [sessionToken, baseUrl]);
+
+  const handleLinkGoogleDrive = () => {
+    if (typeof (window as any).google === "undefined") {
+      alert("A biblioteca do Google está carregando. Por favor, aguarde alguns instantes.");
+      return;
+    }
+    
+    const client = (window as any).google.accounts.oauth2.initCodeClient({
+      client_id: "569049899903-rb5qc608qpdnt8vkqv66dl4ctkdjvnfq.apps.googleusercontent.com",
+      scope: "https://www.googleapis.com/auth/drive.file",
+      ux_mode: "popup",
+      callback: async (response: any) => {
+        if (response && response.code) {
+          try {
+            const res = await fetch(`${baseUrl}/api/auth/google/token`, {
+              method: "POST",
+              headers: {
+                "Content-Type": "application/json",
+                "Authorization": `Bearer ${sessionToken}`
+              },
+              body: JSON.stringify({ code: response.code })
+            });
+            const data = await res.json();
+            if (res.ok) {
+              alert("Google Drive vinculado com sucesso!");
+              setUser(prev => prev ? { ...prev, is_drive_linked: true } : null);
+            } else {
+              alert(`Erro ao vincular Google Drive: ${data.error || 'Erro desconhecido'}`);
+            }
+          } catch (err: any) {
+            alert(`Erro de rede: ${err.message}`);
+          }
+        }
+      }
+    });
+    client.requestAccessToken();
+  };
+
+  const handleSaveToDrive = async (objectId: string, objectName: string, drawingData: string) => {
+    if (!sessionToken) {
+      setAuthMode('login');
+      setIsAuthModalOpen(true);
+      return;
+    }
+    if (!user?.is_drive_linked) {
+      alert("Você precisa vincular o seu Google Drive primeiro.");
+      return;
+    }
+    
+    setDriveSaving(objectId);
+    try {
+      const res = await fetch(`${baseUrl}/api/drive/save`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${sessionToken}`
+        },
+        body: JSON.stringify({ objectName, drawingData })
+      });
+      const data = await res.json();
+      if (res.ok && data.success) {
+        const notifId = Date.now();
+        setNotification({
+          id: notifId,
+          message: `SALVO NO GOOGLE DRIVE: ${objectName}`
+        });
+        setTimeout(() => setNotification(prev => prev?.id === notifId ? null : prev), 4000);
+      } else {
+        alert(`Erro ao salvar no Drive: ${data.error || 'Erro desconhecido'}`);
+      }
+    } catch (err: any) {
+      alert(`Erro na requisição: ${err.message}`);
+    } finally {
+      setDriveSaving(null);
+    }
+  };
+
+  const handleAuthSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setAuthError(null);
+    setAuthLoading(true);
+    
+    const endpoint = authMode === 'login' ? 'login' : 'register';
+    try {
+      const res = await fetch(`${baseUrl}/api/auth/${endpoint}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email: authEmail, password: authPassword })
+      });
+      const data = await res.json();
+      if (res.ok && data.token) {
+        localStorage.setItem('throwbox_session_token', data.token);
+        setSessionToken(data.token);
+        setUser(data.user);
+        setIsAuthModalOpen(false);
+        setAuthEmail('');
+        setAuthPassword('');
+      } else {
+        setAuthError(data.error || 'Ocorreu um erro.');
+      }
+    } catch (err: any) {
+      setAuthError(`Erro de rede: ${err.message}`);
+    } finally {
+      setAuthLoading(false);
+    }
+  };
+
+  const handleLogout = () => {
+    localStorage.removeItem('throwbox_session_token');
+    setSessionToken(null);
+    setUser(null);
+  };
   // Better staging logic: Only pick a default if we have literally nothing selected
   useEffect(() => {
     // If we lose our staged object (it was transferred away or deleted)
@@ -812,11 +983,32 @@ export default function App() {
             <div className="font-bold text-[12px] sm:text-[14px] tracking-[4px] uppercase text-[#00F0FF]">
               {connectionStatus === 'Connected' ? 'ONLINE' : 'PROCURANDO DISPOSITIVOS'}
             </div>
-            {me && (
-              <div className="text-[10px] text-[#888] font-mono tracking-[1px] mt-1">
-                MEU ID: P-{me.playerNumber}
-              </div>
-            )}
+            <div className="flex flex-col gap-0.5 mt-1">
+              {me && (
+                <div className="text-[10px] text-[#888] font-mono tracking-[1px]">
+                  MEU ID: P-{me.playerNumber}
+                </div>
+              )}
+              {user ? (
+                <div className="text-[10px] text-[#888] font-mono flex items-center gap-1.5 flex-wrap">
+                  <span className="text-white/70">👤 {user.email}</span>
+                  {!user.is_drive_linked ? (
+                    <button onClick={handleLinkGoogleDrive} className="text-[#00F0FF] hover:underline cursor-pointer font-bold">
+                      [Vincular Drive]
+                    </button>
+                  ) : (
+                    <span className="text-green-500 font-bold">[Drive Conectado]</span>
+                  )}
+                  <button onClick={handleLogout} className="text-red-400 hover:underline cursor-pointer">
+                    [Sair]
+                  </button>
+                </div>
+              ) : (
+                <button onClick={() => { setAuthMode('login'); setIsAuthModalOpen(true); }} className="text-[10px] text-[#00F0FF] hover:underline text-left cursor-pointer font-bold">
+                  🔑 Fazer Login / Cadastrar
+                </button>
+              )}
+            </div>
           </div>
           <div className="sm:hidden text-right">
             <div className="text-[9px] text-[#444] uppercase tracking-[1px]">REDE ATUAL</div>
@@ -1208,8 +1400,22 @@ export default function App() {
                            <div className="absolute inset-0 opacity-40 pointer-events-none flex items-center justify-center">
                                <ObjectIcon obj={item} size={60} />
                            </div>
-                           <div className="z-10 bg-black/60 px-1 inline-block text-[9px] uppercase tracking-widest font-bold self-start rounded-sm" style={{color: item.color}}>
-                             {item.shape}
+                           <div className="z-10 flex justify-between items-center w-full">
+                             <div className="bg-black/60 px-1 inline-block text-[9px] uppercase tracking-widest font-bold rounded-sm" style={{color: item.color}}>
+                               {item.shape}
+                             </div>
+                             {item.shape === 'plane' && item.drawingData && (
+                               <button 
+                                 onClick={(e) => {
+                                   e.stopPropagation();
+                                   handleSaveToDrive(item.id, item.name, item.drawingData!);
+                                 }}
+                                 className="z-20 px-1.5 py-0.5 bg-black/80 hover:bg-[#222] border border-white/5 hover:border-[#00F0FF]/30 rounded transition-colors text-[8px] font-bold text-[#00F0FF] uppercase tracking-[1px] cursor-pointer flex items-center gap-1"
+                                 disabled={driveSaving !== null}
+                               >
+                                 {driveSaving === item.id ? '...' : '💾 Drive'}
+                               </button>
+                             )}
                            </div>
                            <div className="z-10 font-bold text-[11px] uppercase tracking-wider bg-black/80 p-1 rounded">
                              {item.name}
@@ -1404,6 +1610,116 @@ export default function App() {
                 <div className="text-[9px] text-[#444] uppercase tracking-wider font-mono">
                   Current Version: {CLIENT_VERSION}
                 </div>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* Auth Modal Overlay */}
+      <AnimatePresence>
+        {isAuthModalOpen && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 bg-black/85 backdrop-blur-md z-[99] flex items-center justify-center p-6"
+          >
+            <motion.div
+              initial={{ scale: 0.95, y: 15 }}
+              animate={{ scale: 1, y: 0 }}
+              exit={{ scale: 0.95, y: 15 }}
+              transition={{ type: "spring", damping: 25, stiffness: 220 }}
+              className="w-full max-w-sm bg-[#121212] border border-white/5 rounded-[24px] p-6 shadow-2xl relative overflow-hidden flex flex-col gap-5"
+            >
+              <div className="absolute top-0 left-0 right-0 h-[2px] bg-gradient-to-r from-transparent via-[#00F0FF] to-transparent" />
+              
+              <div className="flex justify-between items-center">
+                <div>
+                  <div className="text-[10px] text-[#00F0FF] uppercase tracking-[3px] font-bold">DATABASE SYNC</div>
+                  <h2 className="text-xl font-black uppercase tracking-tight text-white mt-0.5">
+                    {authMode === 'login' ? '🔑 ACESSAR CONTA' : '📝 CADASTRAR CONTA'}
+                  </h2>
+                </div>
+                <button 
+                  onClick={() => {
+                    setIsAuthModalOpen(false);
+                    setAuthError(null);
+                  }}
+                  className="p-1.5 hover:bg-[#222] rounded-full transition-colors cursor-pointer text-[#555] hover:text-white"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+
+              {authError && (
+                <div className="bg-red-950/45 border border-red-500/20 text-red-400 p-3 rounded-xl text-xs font-medium leading-relaxed">
+                  ⚠️ {authError}
+                </div>
+              )}
+
+              <form onSubmit={handleAuthSubmit} className="flex flex-col gap-4">
+                <div className="flex flex-col gap-1.5">
+                  <label className="text-[9px] text-[#555] uppercase tracking-[2px] font-bold">E-mail</label>
+                  <input
+                    type="email"
+                    required
+                    placeholder="seu@email.com"
+                    value={authEmail}
+                    onChange={(e) => setAuthEmail(e.target.value)}
+                    className="w-full bg-[#1c1c1c] border border-white/5 focus:border-[#00F0FF]/30 rounded-xl px-4 py-3 text-xs text-white outline-none transition-colors placeholder:text-neutral-600"
+                  />
+                </div>
+
+                <div className="flex flex-col gap-1.5">
+                  <label className="text-[9px] text-[#555] uppercase tracking-[2px] font-bold">Senha</label>
+                  <input
+                    type="password"
+                    required
+                    placeholder="Sua senha secreta"
+                    value={authPassword}
+                    onChange={(e) => setAuthPassword(e.target.value)}
+                    className="w-full bg-[#1c1c1c] border border-white/5 focus:border-[#00F0FF]/30 rounded-xl px-4 py-3 text-xs text-white outline-none transition-colors placeholder:text-neutral-600"
+                  />
+                </div>
+
+                <button
+                  type="submit"
+                  disabled={authLoading}
+                  className="w-full py-3 bg-[#00F0FF] hover:bg-[#00D0DF] text-black font-black uppercase text-[10px] tracking-widest transition-all rounded-xl cursor-pointer text-center disabled:opacity-50 disabled:cursor-not-allowed mt-2 shadow-[0_4px_15px_rgba(0,240,255,0.2)]"
+                >
+                  {authLoading ? 'Processando...' : authMode === 'login' ? 'Entrar' : 'Cadastrar'}
+                </button>
+              </form>
+
+              <div className="text-center mt-1 border-t border-white/5 pt-4">
+                {authMode === 'login' ? (
+                  <p className="text-[11px] text-neutral-500">
+                    Não tem conta?{' '}
+                    <button 
+                      onClick={() => {
+                        setAuthMode('register');
+                        setAuthError(null);
+                      }} 
+                      className="text-[#00F0FF] hover:underline font-bold cursor-pointer"
+                    >
+                      Criar uma conta
+                    </button>
+                  </p>
+                ) : (
+                  <p className="text-[11px] text-neutral-500">
+                    Já tem uma conta?{' '}
+                    <button 
+                      onClick={() => {
+                        setAuthMode('login');
+                        setAuthError(null);
+                      }} 
+                      className="text-[#00F0FF] hover:underline font-bold cursor-pointer"
+                    >
+                      Fazer login
+                    </button>
+                  </p>
+                )}
               </div>
             </motion.div>
           </motion.div>
