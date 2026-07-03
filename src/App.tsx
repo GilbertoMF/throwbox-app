@@ -423,7 +423,10 @@ export default function App() {
             const res = await fetch(`${baseUrl}/api/auth/google/login`, {
               method: "POST",
               headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({ code })
+              body: JSON.stringify({ 
+                code,
+                redirectUri: "http://localhost:3000/api/auth/google/callback"
+              })
             });
             const data = await res.json();
             if (res.ok && data.token) {
@@ -448,7 +451,10 @@ export default function App() {
                 "Content-Type": "application/json",
                 "Authorization": `Bearer ${storedToken}`
               },
-              body: JSON.stringify({ code })
+              body: JSON.stringify({ 
+                code,
+                redirectUri: "http://localhost:3000/api/auth/google/callback"
+              })
             });
             const data = await res.json();
             if (res.ok) {
@@ -467,14 +473,47 @@ export default function App() {
     }
   }, [baseUrl]);
 
-  const handleLinkGoogleDrive = () => {
-    const client_id = "569049899903-rb5qc608qpdnt8vkqv66dl4ctkdjvnfq.apps.googleusercontent.com";
-    const redirect_uri = "http://localhost:3000/api/auth/google/callback";
-    const scope = "https://www.googleapis.com/auth/drive.file";
-    const state = `link_drive:${sessionToken}`;
-    const authUrl = `https://accounts.google.com/o/oauth2/v2/auth?client_id=${client_id}&redirect_uri=${encodeURIComponent(redirect_uri)}&response_type=code&scope=${encodeURIComponent(scope)}&state=${encodeURIComponent(state)}&prompt=select_account%20consent&access_type=offline&login_hint=${encodeURIComponent(user?.email || '')}`;
-    
-    window.location.href = authUrl;
+  const handleLinkGoogleDrive = async () => {
+    if (!user) return;
+
+    const confirmMessage = `Deseja vincular o Google Drive da conta "${user.email}"?`;
+    if (!window.confirm(confirmMessage)) return;
+
+    if (Capacitor.isNativePlatform()) {
+      try {
+        const googleUser = await GoogleAuth.signIn();
+        const serverAuthCode = googleUser.serverAuthCode;
+        if (!serverAuthCode) {
+          throw new Error("Não foi possível obter o código de autorização nativo do Google.");
+        }
+
+        const res = await fetch(`${baseUrl}/api/auth/google/token`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "Authorization": `Bearer ${sessionToken}`
+          },
+          body: JSON.stringify({ code: serverAuthCode })
+        });
+        const data = await res.json();
+        if (res.ok) {
+          alert("Google Drive vinculado com sucesso!");
+          setUser(prev => prev ? { ...prev, is_drive_linked: true } : null);
+        } else {
+          alert(`Erro ao vincular Google Drive: ${data.error || 'Erro desconhecido'}`);
+        }
+      } catch (err: any) {
+        alert(`Erro no vínculo nativo: ${err.message || JSON.stringify(err)}`);
+      }
+    } else {
+      const client_id = "569049899903-rb5qc608qpdnt8vkqv66dl4ctkdjvnfq.apps.googleusercontent.com";
+      const redirect_uri = "http://localhost:3000/api/auth/google/callback";
+      const scope = "https://www.googleapis.com/auth/drive.file";
+      const state = `link_drive:${sessionToken}`;
+      const authUrl = `https://accounts.google.com/o/oauth2/v2/auth?client_id=${client_id}&redirect_uri=${encodeURIComponent(redirect_uri)}&response_type=code&scope=${encodeURIComponent(scope)}&state=${encodeURIComponent(state)}&prompt=select_account%20consent&access_type=offline&login_hint=${encodeURIComponent(user?.email || '')}`;
+      
+      window.location.href = authUrl;
+    }
   };
 
   const handleGoogleLogin = async () => {

@@ -657,7 +657,7 @@ async function startServer() {
 
   app.post("/api/auth/google/login", async (req, res) => {
     if (!pool) return res.status(500).json({ error: "No database pool" });
-    const { code } = req.body;
+    const { code, redirectUri } = req.body;
     if (!code) return res.status(400).json({ error: "Missing authorization code" });
 
     try {
@@ -672,7 +672,7 @@ async function startServer() {
           code,
           client_id,
           client_secret,
-          redirect_uri: "postmessage",
+          redirect_uri: redirectUri || "postmessage",
           grant_type: "authorization_code",
         }).toString(),
       });
@@ -783,7 +783,7 @@ async function startServer() {
       return res.status(401).json({ error: "No token" });
     }
     const token = authHeader.split(" ")[1];
-    const { code } = req.body;
+    const { code, redirectUri } = req.body;
     if (!code) return res.status(400).json({ error: "Missing authorization code" });
 
     try {
@@ -806,7 +806,7 @@ async function startServer() {
           code,
           client_id,
           client_secret,
-          redirect_uri: "postmessage",
+          redirect_uri: redirectUri || "postmessage",
           grant_type: "authorization_code",
         }).toString(),
       });
