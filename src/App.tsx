@@ -1148,7 +1148,9 @@ export default function App() {
                   {user.is_drive_linked ? (
                     <span className="text-green-500 font-bold">[Drive Conectado]</span>
                   ) : (
-                    <span className="text-yellow-500 font-bold">[Sem Drive]</span>
+                    <button onClick={handleLinkGoogleDrive} className="text-[#00F0FF] hover:underline cursor-pointer font-bold">
+                      [Vincular Drive]
+                    </button>
                   )}
                   <button onClick={handleLogout} className="text-red-400 hover:underline cursor-pointer">
                     [Sair]
