@@ -472,7 +472,7 @@ export default function App() {
     const redirect_uri = "http://localhost:3000/api/auth/google/callback";
     const scope = "https://www.googleapis.com/auth/drive.file";
     const state = `link_drive:${sessionToken}`;
-    const authUrl = `https://accounts.google.com/o/oauth2/v2/auth?client_id=${client_id}&redirect_uri=${encodeURIComponent(redirect_uri)}&response_type=code&scope=${encodeURIComponent(scope)}&state=${encodeURIComponent(state)}&prompt=consent&access_type=offline`;
+    const authUrl = `https://accounts.google.com/o/oauth2/v2/auth?client_id=${client_id}&redirect_uri=${encodeURIComponent(redirect_uri)}&response_type=code&scope=${encodeURIComponent(scope)}&state=${encodeURIComponent(state)}&prompt=select_account%20consent&access_type=offline&login_hint=${encodeURIComponent(user?.email || '')}`;
     
     window.location.href = authUrl;
   };
