@@ -390,75 +390,52 @@ export default function App() {
     fetchProfile();
   }, [sessionToken, baseUrl]);
 
-  // Trigger Google One Tap login if not logged in
+  // Handle Google OAuth Redirect Callbacks
   useEffect(() => {
-    if (sessionToken) return;
+    const searchParams = new URLSearchParams(window.location.search);
+    const code = searchParams.get('code');
+    const state = searchParams.get('state');
     
-    const checkInterval = setInterval(() => {
-      if (typeof (window as any).google !== "undefined" && (window as any).google.accounts) {
-        clearInterval(checkInterval);
+    if (code) {
+      const newUrl = window.location.pathname;
+      window.history.replaceState({}, document.title, newUrl);
+      
+      const processOAuthCallback = async () => {
+        if (!state) return;
         
-        try {
-          (window as any).google.accounts.id.initialize({
-            client_id: "569049899903-rb5qc608qpdnt8vkqv66dl4ctkdjvnfq.apps.googleusercontent.com",
-            callback: async (response: any) => {
-              if (response && response.credential) {
-                setAuthLoading(true);
-                setAuthError(null);
-                try {
-                  const res = await fetch(`${baseUrl}/api/auth/google/one-tap`, {
-                    method: "POST",
-                    headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify({ credential: response.credential })
-                  });
-                  const data = await res.json();
-                  if (res.ok && data.token) {
-                    localStorage.setItem('throwbox_session_token', data.token);
-                    setSessionToken(data.token);
-                    setUser(data.user);
-                    setIsAuthModalOpen(false);
-                  } else {
-                    setAuthError(data.error || 'Erro no login com o Google.');
-                  }
-                } catch (err: any) {
-                  setAuthError(`Erro de rede: ${err.message}`);
-                } finally {
-                  setAuthLoading(false);
-                }
-              }
+        if (state === 'login') {
+          setAuthLoading(true);
+          setAuthError(null);
+          try {
+            const res = await fetch(`${baseUrl}/api/auth/google/login`, {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ code })
+            });
+            const data = await res.json();
+            if (res.ok && data.token) {
+              localStorage.setItem('throwbox_session_token', data.token);
+              setSessionToken(data.token);
+              setUser(data.user);
+              setIsAuthModalOpen(false);
+            } else {
+              setAuthError(data.error || 'Erro ao processar login com o Google.');
             }
-          });
-          
-          (window as any).google.accounts.id.prompt();
-        } catch (err) {
-          console.error("Failed to initialize Google One Tap:", err);
-        }
-      }
-    }, 1000);
-
-    return () => clearInterval(checkInterval);
-  }, [sessionToken, baseUrl]);
-
-  const handleLinkGoogleDrive = () => {
-    if (typeof (window as any).google === "undefined") {
-      alert("A biblioteca do Google está carregando. Por favor, aguarde alguns instantes.");
-      return;
-    }
-    
-    const client = (window as any).google.accounts.oauth2.initCodeClient({
-      client_id: "569049899903-rb5qc608qpdnt8vkqv66dl4ctkdjvnfq.apps.googleusercontent.com",
-      scope: "https://www.googleapis.com/auth/drive.file",
-      ux_mode: "popup",
-      callback: async (response: any) => {
-        if (response && response.code) {
+          } catch (err: any) {
+            setAuthError(`Erro de rede: ${err.message}`);
+          } finally {
+            setAuthLoading(false);
+          }
+        } else if (state.startsWith('link_drive:')) {
+          const storedToken = state.split(':')[1];
           try {
             const res = await fetch(`${baseUrl}/api/auth/google/token`, {
               method: "POST",
               headers: {
                 "Content-Type": "application/json",
-                "Authorization": `Bearer ${sessionToken}`
+                "Authorization": `Bearer ${storedToken}`
               },
-              body: JSON.stringify({ code: response.code })
+              body: JSON.stringify({ code })
             });
             const data = await res.json();
             if (res.ok) {
@@ -471,58 +448,30 @@ export default function App() {
             alert(`Erro de rede: ${err.message}`);
           }
         }
-      }
-    });
-    client.requestCode();
-  };
+      };
+      
+      processOAuthCallback();
+    }
+  }, [baseUrl]);
 
-  const triggerGooglePopupLogin = () => {
-    const client = (window as any).google.accounts.oauth2.initCodeClient({
-      client_id: "569049899903-rb5qc608qpdnt8vkqv66dl4ctkdjvnfq.apps.googleusercontent.com",
-      scope: "openid email",
-      ux_mode: "popup",
-      callback: async (response: any) => {
-        if (response && response.code) {
-          setAuthLoading(true);
-          setAuthError(null);
-          try {
-            const res = await fetch(`${baseUrl}/api/auth/google/login`, {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({ code: response.code })
-            });
-            const data = await res.json();
-            if (res.ok && data.token) {
-              localStorage.setItem('throwbox_session_token', data.token);
-              setSessionToken(data.token);
-              setUser(data.user);
-              setIsAuthModalOpen(false);
-            } else {
-              setAuthError(data.error || 'Erro ao fazer login com o Google.');
-            }
-          } catch (err: any) {
-            setAuthError(`Erro de rede: ${err.message}`);
-          } finally {
-            setAuthLoading(false);
-          }
-        }
-      }
-    });
-    client.requestCode();
+  const handleLinkGoogleDrive = () => {
+    const client_id = "569049899903-rb5qc608qpdnt8vkqv66dl4ctkdjvnfq.apps.googleusercontent.com";
+    const redirect_uri = "http://localhost:3000/api/auth/google/callback";
+    const scope = "https://www.googleapis.com/auth/drive.file";
+    const state = `link_drive:${sessionToken}`;
+    const authUrl = `https://accounts.google.com/o/oauth2/v2/auth?client_id=${client_id}&redirect_uri=${encodeURIComponent(redirect_uri)}&response_type=code&scope=${encodeURIComponent(scope)}&state=${encodeURIComponent(state)}&prompt=consent&access_type=offline`;
+    
+    window.location.href = authUrl;
   };
 
   const handleGoogleLogin = () => {
-    if (typeof (window as any).google === "undefined" || !(window as any).google.accounts) {
-      alert("A biblioteca do Google está carregando. Por favor, aguarde alguns instantes.");
-      return;
-    }
+    const client_id = "569049899903-rb5qc608qpdnt8vkqv66dl4ctkdjvnfq.apps.googleusercontent.com";
+    const redirect_uri = "http://localhost:3000/api/auth/google/callback";
+    const scope = "openid email";
+    const state = "login";
+    const authUrl = `https://accounts.google.com/o/oauth2/v2/auth?client_id=${client_id}&redirect_uri=${encodeURIComponent(redirect_uri)}&response_type=code&scope=${encodeURIComponent(scope)}&state=${encodeURIComponent(state)}`;
     
-    (window as any).google.accounts.id.prompt((notification: any) => {
-      if (notification.isNotDisplayed() || notification.isSkippedMoment()) {
-        console.log("One Tap not displayed, falling back to popup...");
-        triggerGooglePopupLogin();
-      }
-    });
+    window.location.href = authUrl;
   };
 
   const handleSaveToDrive = async (objectId: string, objectName: string, drawingData: string) => {
@@ -1777,12 +1726,6 @@ export default function App() {
                 <span className="text-[9px] text-[#444] uppercase tracking-widest font-black">OU</span>
                 <div className="flex-1 h-[1px] bg-white/5" />
               </div>
-
-              {/* Diagnostic Log */}
-              <div className="text-[9px] text-neutral-500 font-mono text-center bg-black/40 py-1 rounded">
-                GSI: google={typeof (window as any).google} | accounts={(window as any).google?.accounts ? 'ok' : 'no'} | oauth2={(window as any).google?.accounts?.oauth2 ? 'ok' : 'no'}
-              </div>
-
               <form onSubmit={handleAuthSubmit} className="flex flex-col gap-4">
                 <div className="flex flex-col gap-1.5">
                   <label className="text-[9px] text-[#555] uppercase tracking-[2px] font-bold">E-mail</label>
