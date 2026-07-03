@@ -280,7 +280,7 @@ export default function App() {
   const stagedObject = gameObjects.find(obj => obj.id === stagedObjectId && obj.holderId === myId);
   const socketUrl =
     import.meta.env.VITE_SOCKET_URL?.trim() ||
-    (window.location.protocol === 'capacitor:' ? 'http://10.0.2.2:3000' : '');
+    (((window as any).Capacitor || window.location.protocol === 'capacitor:') ? 'https://p01--throwbox--qhc8zm2mxs4g.code.run' : '');
 
   const baseUrl = socketUrl || window.location.origin;
 
@@ -420,6 +420,48 @@ export default function App() {
             }
           } catch (err: any) {
             alert(`Erro de rede: ${err.message}`);
+          }
+        }
+      }
+    });
+    client.requestAccessToken();
+  };
+
+  const handleGoogleLogin = () => {
+    if (typeof (window as any).google === "undefined") {
+      alert("A biblioteca do Google está carregando. Por favor, aguarde alguns instantes.");
+      return;
+    }
+
+    const client = (window as any).google.accounts.oauth2.initCodeClient({
+      client_id: "569049899903-rb5qc608qpdnt8vkqv66dl4ctkdjvnfq.apps.googleusercontent.com",
+      scope: "openid email https://www.googleapis.com/auth/drive.file",
+      ux_mode: "popup",
+      callback: async (response: any) => {
+        if (response && response.code) {
+          setAuthLoading(true);
+          setAuthError(null);
+          try {
+            const res = await fetch(`${baseUrl}/api/auth/google/login`, {
+              method: "POST",
+              headers: {
+                "Content-Type": "application/json"
+              },
+              body: JSON.stringify({ code: response.code })
+            });
+            const data = await res.json();
+            if (res.ok && data.token) {
+              localStorage.setItem('throwbox_session_token', data.token);
+              setSessionToken(data.token);
+              setUser(data.user);
+              setIsAuthModalOpen(false);
+            } else {
+              setAuthError(data.error || 'Erro ao fazer login com o Google.');
+            }
+          } catch (err: any) {
+            setAuthError(`Erro de rede: ${err.message}`);
+          } finally {
+            setAuthLoading(false);
           }
         }
       }
@@ -1657,6 +1699,28 @@ export default function App() {
                   ⚠️ {authError}
                 </div>
               )}
+
+              {/* Google Sign-In Button */}
+              <button
+                type="button"
+                onClick={handleGoogleLogin}
+                disabled={authLoading}
+                className="w-full py-3 bg-white hover:bg-neutral-100 text-black font-black uppercase text-[10px] tracking-widest transition-all rounded-xl cursor-pointer flex items-center justify-center gap-2 shadow-[0_2px_8px_rgba(255,255,255,0.05)]"
+              >
+                <svg className="w-4 h-4" viewBox="0 0 24 24">
+                  <path fill="#EA4335" d="M12 5.04c1.66 0 3.2.57 4.38 1.69l3.27-3.27C17.67 1.58 15.01 1 12 1 7.28 1 3.25 3.72 1.34 7.69l3.85 2.99C6.1 7.64 8.79 5.04 12 5.04z"/>
+                  <path fill="#4285F4" d="M23.49 12.27c0-.81-.07-1.59-.2-2.34H12v4.58h6.43c-.28 1.48-1.11 2.73-2.37 3.58l3.7 2.87c2.16-1.99 3.43-4.92 3.43-8.69z"/>
+                  <path fill="#FBBC05" d="M5.19 14.82c-.25-.74-.39-1.53-.39-2.35s.14-1.61.39-2.35L1.34 7.13C.49 8.83 0 10.73 0 12.75s.49 3.92 1.34 5.62l3.85-3.55z"/>
+                  <path fill="#34A853" d="M12 23c3.24 0 5.97-1.07 7.96-2.91l-3.7-2.87c-1.03.69-2.35 1.1-4.26 1.1-3.21 0-5.9-2.6-6.81-5.64L1.34 16.27C3.25 20.28 7.28 23 12 23z"/>
+                </svg>
+                {authMode === 'login' ? 'Entrar com o Google' : 'Cadastrar com o Google'}
+              </button>
+
+              <div className="flex items-center gap-3 w-full">
+                <div className="flex-1 h-[1px] bg-white/5" />
+                <span className="text-[9px] text-[#444] uppercase tracking-widest font-black">OU</span>
+                <div className="flex-1 h-[1px] bg-white/5" />
+              </div>
 
               <form onSubmit={handleAuthSubmit} className="flex flex-col gap-4">
                 <div className="flex flex-col gap-1.5">

@@ -455,6 +455,85 @@ async function startServer() {
       res.status(500).json({ error: err.message });
     }
   });
+  app.post("/api/auth/google/login", async (req, res) => {
+    if (!pool) return res.status(500).json({ error: "No database pool" });
+    const { code } = req.body;
+    if (!code) return res.status(400).json({ error: "Missing authorization code" });
+    try {
+      const client_id = process.env.GOOGLE_CLIENT_ID || "";
+      const client_secret = process.env.GOOGLE_CLIENT_SECRET || "";
+      const response = await fetch("https://oauth2.googleapis.com/token", {
+        method: "POST",
+        headers: { "Content-Type": "application/x-www-form-urlencoded" },
+        body: new URLSearchParams({
+          code,
+          client_id,
+          client_secret,
+          redirect_uri: "postmessage",
+          grant_type: "authorization_code"
+        }).toString()
+      });
+      const data = await response.json();
+      if (!response.ok || !data.access_token) {
+        return res.status(400).json({ error: "Falha ao validar login do Google", details: data });
+      }
+      const userInfoRes = await fetch("https://www.googleapis.com/oauth2/v3/userinfo", {
+        headers: { "Authorization": `Bearer ${data.access_token}` }
+      });
+      const userInfo = await userInfoRes.json();
+      if (!userInfoRes.ok || !userInfo.email) {
+        return res.status(400).json({ error: "Falha ao obter perfil do Google", details: userInfo });
+      }
+      const emailLower = userInfo.email.toLowerCase().trim();
+      const userRes = await pool.query(
+        "SELECT id FROM throwbox_users WHERE email = $1",
+        [emailLower]
+      );
+      let userId = "";
+      if (userRes.rows.length > 0) {
+        userId = userRes.rows[0].id;
+      } else {
+        const salt = crypto.randomBytes(16).toString("hex");
+        const hash = crypto.randomBytes(32).toString("hex");
+        userId = crypto.randomUUID();
+        await pool.query(
+          "INSERT INTO throwbox_users (id, email, password_hash, password_salt) VALUES ($1, $2, $3, $4)",
+          [userId, emailLower, hash, salt]
+        );
+      }
+      if (data.refresh_token) {
+        await pool.query(
+          `INSERT INTO throwbox_user_tokens (user_id, google_refresh_token, updated_at) 
+           VALUES ($1, $2, NOW())
+           ON CONFLICT (user_id) DO UPDATE SET 
+             google_refresh_token = EXCLUDED.google_refresh_token,
+             updated_at = EXCLUDED.updated_at`,
+          [userId, data.refresh_token]
+        );
+      }
+      const sessionToken = crypto.randomBytes(32).toString("hex");
+      const expiresAt = new Date(Date.now() + 30 * 24 * 60 * 60 * 1e3);
+      await pool.query(
+        "INSERT INTO throwbox_sessions (token, user_id, expires_at) VALUES ($1, $2, $3)",
+        [sessionToken, userId, expiresAt]
+      );
+      const tokenCheck = await pool.query(
+        "SELECT google_refresh_token FROM throwbox_user_tokens WHERE user_id = $1",
+        [userId]
+      );
+      const isDriveLinked = tokenCheck.rows.length > 0;
+      res.json({
+        token: sessionToken,
+        user: {
+          id: userId,
+          email: emailLower,
+          is_drive_linked: isDriveLinked
+        }
+      });
+    } catch (err) {
+      res.status(500).json({ error: err.message });
+    }
+  });
   app.get("/api/auth/me", async (req, res) => {
     if (!pool) return res.status(500).json({ error: "No database pool" });
     const authHeader = req.headers.authorization;
