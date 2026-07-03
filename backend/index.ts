@@ -812,22 +812,35 @@ async function startServer() {
       });
 
       const data: any = await response.json();
-      if (!response.ok || !data.refresh_token) {
+      if (!response.ok) {
         return res.status(400).json({ 
-          error: "Falha ao obter refresh_token do Google. Tente desvincular o app da sua conta Google e vincular novamente.", 
+          error: "Falha ao validar código com o Google", 
           details: data 
         });
       }
 
-      // 3. Save refresh token
-      await pool.query(
-        `INSERT INTO throwbox_user_tokens (user_id, google_refresh_token, updated_at) 
-         VALUES ($1, $2, NOW())
-         ON CONFLICT (user_id) DO UPDATE SET 
-           google_refresh_token = EXCLUDED.google_refresh_token,
-           updated_at = EXCLUDED.updated_at`,
-        [userId, data.refresh_token]
-      );
+      if (!data.refresh_token) {
+        const existingTokenRes = await pool.query(
+          "SELECT google_refresh_token FROM throwbox_user_tokens WHERE user_id = $1",
+          [userId]
+        );
+        if (existingTokenRes.rows.length === 0 || !existingTokenRes.rows[0].google_refresh_token) {
+          return res.status(400).json({ 
+            error: "Falha ao obter refresh_token do Google. Tente desvincular o app da sua conta Google e vincular novamente.", 
+            details: data 
+          });
+        }
+      } else {
+        // 3. Save refresh token
+        await pool.query(
+          `INSERT INTO throwbox_user_tokens (user_id, google_refresh_token, updated_at) 
+           VALUES ($1, $2, NOW())
+           ON CONFLICT (user_id) DO UPDATE SET 
+             google_refresh_token = EXCLUDED.google_refresh_token,
+             updated_at = EXCLUDED.updated_at`,
+          [userId, data.refresh_token]
+        );
+      }
 
       res.json({ success: true });
     } catch (err: any) {

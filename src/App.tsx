@@ -142,7 +142,9 @@ export default function App() {
   useEffect(() => {
     if (Capacitor.isNativePlatform()) {
       try {
-        GoogleAuth.initialize();
+        GoogleAuth.initialize({
+          grantOfflineAccess: true
+        });
       } catch (e) {
         console.warn("GoogleAuth initialize warning:", e);
       }
