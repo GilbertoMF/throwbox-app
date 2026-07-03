@@ -475,48 +475,7 @@ export default function App() {
     }
   }, [baseUrl]);
 
-  const handleLinkGoogleDrive = async () => {
-    if (!user) return;
 
-    const confirmMessage = `Deseja vincular o Google Drive da conta "${user.email}"?`;
-    if (!window.confirm(confirmMessage)) return;
-
-    if (Capacitor.isNativePlatform()) {
-      try {
-        const googleUser = await GoogleAuth.signIn();
-        const serverAuthCode = googleUser.serverAuthCode;
-        if (!serverAuthCode) {
-          throw new Error("Não foi possível obter o código de autorização nativo do Google.");
-        }
-
-        const res = await fetch(`${baseUrl}/api/auth/google/token`, {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            "Authorization": `Bearer ${sessionToken}`
-          },
-          body: JSON.stringify({ code: serverAuthCode })
-        });
-        const data = await res.json();
-        if (res.ok) {
-          alert("Google Drive vinculado com sucesso!");
-          setUser(prev => prev ? { ...prev, is_drive_linked: true } : null);
-        } else {
-          alert(`Erro ao vincular Google Drive: ${data.error || 'Erro desconhecido'}`);
-        }
-      } catch (err: any) {
-        alert(`Erro no vínculo nativo: ${err.message || JSON.stringify(err)}`);
-      }
-    } else {
-      const client_id = "569049899903-rb5qc608qpdnt8vkqv66dl4ctkdjvnfq.apps.googleusercontent.com";
-      const redirect_uri = "http://localhost:3000/api/auth/google/callback";
-      const scope = "https://www.googleapis.com/auth/drive.file";
-      const state = `link_drive:${sessionToken}`;
-      const authUrl = `https://accounts.google.com/o/oauth2/v2/auth?client_id=${client_id}&redirect_uri=${encodeURIComponent(redirect_uri)}&response_type=code&scope=${encodeURIComponent(scope)}&state=${encodeURIComponent(state)}&prompt=select_account%20consent&access_type=offline&login_hint=${encodeURIComponent(user?.email || '')}`;
-      
-      window.location.href = authUrl;
-    }
-  };
 
   const handleGoogleLogin = async () => {
     if (Capacitor.isNativePlatform()) {
@@ -524,13 +483,13 @@ export default function App() {
       setAuthError(null);
       try {
         const googleUser = await GoogleAuth.signIn();
-        const idToken = googleUser.authentication.idToken;
-        if (!idToken) throw new Error("ID Token não retornado pelo Google.");
+        const serverAuthCode = googleUser.serverAuthCode;
+        if (!serverAuthCode) throw new Error("Código de autorização não retornado pelo Google.");
 
-        const res = await fetch(`${baseUrl}/api/auth/google/one-tap`, {
+        const res = await fetch(`${baseUrl}/api/auth/google/login`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ credential: idToken })
+          body: JSON.stringify({ code: serverAuthCode })
         });
         const data = await res.json();
         if (res.ok && data.token) {
@@ -549,9 +508,9 @@ export default function App() {
     } else {
       const client_id = "569049899903-rb5qc608qpdnt8vkqv66dl4ctkdjvnfq.apps.googleusercontent.com";
       const redirect_uri = "http://localhost:3000/api/auth/google/callback";
-      const scope = "openid email";
+      const scope = "openid email https://www.googleapis.com/auth/drive.file";
       const state = "login";
-      const authUrl = `https://accounts.google.com/o/oauth2/v2/auth?client_id=${client_id}&redirect_uri=${encodeURIComponent(redirect_uri)}&response_type=code&scope=${encodeURIComponent(scope)}&state=${encodeURIComponent(state)}`;
+      const authUrl = `https://accounts.google.com/o/oauth2/v2/auth?client_id=${client_id}&redirect_uri=${encodeURIComponent(redirect_uri)}&response_type=code&scope=${encodeURIComponent(scope)}&state=${encodeURIComponent(state)}&prompt=consent&access_type=offline`;
       
       window.location.href = authUrl;
     }
@@ -1178,12 +1137,10 @@ export default function App() {
               {user ? (
                 <div className="text-[10px] text-[#888] font-mono flex items-center gap-1.5 flex-wrap">
                   <span className="text-white/70">👤 {user.email}</span>
-                  {!user.is_drive_linked ? (
-                    <button onClick={handleLinkGoogleDrive} className="text-[#00F0FF] hover:underline cursor-pointer font-bold">
-                      [Vincular Drive]
-                    </button>
-                  ) : (
+                  {user.is_drive_linked ? (
                     <span className="text-green-500 font-bold">[Drive Conectado]</span>
+                  ) : (
+                    <span className="text-yellow-500 font-bold">[Sem Drive]</span>
                   )}
                   <button onClick={handleLogout} className="text-red-400 hover:underline cursor-pointer">
                     [Sair]
