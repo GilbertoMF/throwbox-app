@@ -624,10 +624,17 @@ export default function App() {
     }
   };
 
-  const handleLogout = () => {
+  const handleLogout = async () => {
     localStorage.removeItem('throwbox_session_token');
     setSessionToken(null);
     setUser(null);
+    if (Capacitor.isNativePlatform()) {
+      try {
+        await GoogleAuth.signOut();
+      } catch (e) {
+        console.error("Erro ao deslogar do Google nativo:", e);
+      }
+    }
   };
   // Better staging logic: Only pick a default if we have literally nothing selected
   useEffect(() => {
