@@ -776,6 +776,110 @@ async function startServer() {
     }
   });
 
+  app.get("/api/auth/google/callback", async (req, res) => {
+    if (!pool) return res.status(500).send("No database pool");
+    const { code, state } = req.query;
+    if (!code || !state) return res.status(400).send("Missing code or state");
+
+    try {
+      const client_id = process.env.GOOGLE_CLIENT_ID || "";
+      const client_secret = process.env.GOOGLE_CLIENT_SECRET || "";
+      const isLinkDrive = typeof state === "string" && state.startsWith("link_drive:");
+      
+      const tokenRes = await fetch("https://oauth2.googleapis.com/token", {
+        method: "POST",
+        headers: { "Content-Type": "application/x-www-form-urlencoded" },
+        body: new URLSearchParams({
+          code: code as string,
+          client_id,
+          client_secret,
+          redirect_uri: "https://p01--throwbox--qhc8zm2mxs4g.code.run/api/auth/google/callback",
+          grant_type: "authorization_code",
+        }).toString(),
+      });
+      const tokenData: any = await tokenRes.json();
+      if (!tokenRes.ok) {
+        return res.status(400).send(`Erro ao trocar código com Google: ${JSON.stringify(tokenData)}`);
+      }
+
+      if (isLinkDrive) {
+        const storedToken = state.split(":")[1];
+        const sessionRes = await pool.query(
+          "SELECT user_id FROM throwbox_sessions WHERE token = $1 AND expires_at > NOW()",
+          [storedToken]
+        );
+        if (sessionRes.rows.length === 0) return res.status(401).send("Sessão inválida ou expirada");
+        const userId = sessionRes.rows[0].user_id;
+
+        // Save refresh token if present
+        if (tokenData.refresh_token) {
+          await pool.query(
+            `INSERT INTO throwbox_user_tokens (user_id, google_refresh_token, updated_at) 
+             VALUES ($1, $2, NOW())
+             ON CONFLICT (user_id) DO UPDATE SET 
+               google_refresh_token = EXCLUDED.google_refresh_token,
+               updated_at = EXCLUDED.updated_at`,
+            [userId, tokenData.refresh_token]
+          );
+        } else {
+          // Check if already has token
+          const existingTokenRes = await pool.query(
+            "SELECT google_refresh_token FROM throwbox_user_tokens WHERE user_id = $1",
+            [userId]
+          );
+          if (existingTokenRes.rows.length === 0 || !existingTokenRes.rows[0].google_refresh_token) {
+            return res.status(400).send("Falha ao obter refresh_token do Google. Limpe o acesso ao ThrowBox nas configurações da sua conta Google e tente novamente.");
+          }
+        }
+
+        // Return beautiful success page
+        res.send(`
+          <html>
+            <head>
+              <meta charset="utf-8">
+              <title>ThrowBox - Google Drive Conectado</title>
+              <meta name="viewport" content="width=device-width, initial-scale=1">
+              <style>
+                body {
+                  background: #0d0e12;
+                  color: #ffffff;
+                  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+                  display: flex;
+                  align-items: center;
+                  justify-content: center;
+                  height: 100vh;
+                  margin: 0;
+                  text-align: center;
+                }
+                .card {
+                  background: #151821;
+                  padding: 40px;
+                  border-radius: 16px;
+                  box-shadow: 0 8px 32px rgba(0,0,0,0.5);
+                  border: 1px solid #1a202c;
+                  max-width: 400px;
+                }
+                h1 { color: #00F0FF; margin-top: 0; }
+                p { color: #888; font-size: 14px; line-height: 1.6; }
+              </style>
+            </head>
+            <body>
+              <div class="card">
+                <h1>Drive Conectado! 🎉</h1>
+                <p>O Google Drive foi vinculado com sucesso à sua conta do ThrowBox.</p>
+                <p>Você já pode fechar esta aba do navegador e voltar para o aplicativo.</p>
+              </div>
+            </body>
+          </html>
+        `);
+      } else {
+        res.redirect(`http://localhost:3000/api/auth/google/callback?code=${code}&state=${state}`);
+      }
+    } catch (err: any) {
+      res.status(500).send(`Erro interno: ${err.message}`);
+    }
+  });
+
   app.post("/api/auth/google/token", async (req, res) => {
     if (!pool) return res.status(500).json({ error: "No database pool" });
     const authHeader = req.headers.authorization;

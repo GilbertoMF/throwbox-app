@@ -477,19 +477,58 @@ export default function App() {
 
 
 
+  const handleLinkGoogleDrive = () => {
+    if (!user) return;
+    const client_id = "569049899903-rb5qc608qpdnt8vkqv66dl4ctkdjvnfq.apps.googleusercontent.com";
+    const redirect_uri = "https://p01--throwbox--qhc8zm2mxs4g.code.run/api/auth/google/callback";
+    const scope = "https://www.googleapis.com/auth/drive.file";
+    const state = `link_drive:${sessionToken}`;
+    const authUrl = `https://accounts.google.com/o/oauth2/v2/auth?client_id=${client_id}&redirect_uri=${encodeURIComponent(redirect_uri)}&response_type=code&scope=${encodeURIComponent(scope)}&state=${encodeURIComponent(state)}&prompt=consent&access_type=offline`;
+    
+    if (Capacitor.isNativePlatform()) {
+      window.open(authUrl, '_system');
+    } else {
+      window.location.href = authUrl;
+    }
+  };
+
+  // Poll user profile when Drive is not linked to automatically update status if authorized externally
+  useEffect(() => {
+    let interval: any;
+    if (sessionToken && user && !user.is_drive_linked) {
+      interval = setInterval(async () => {
+        try {
+          const res = await fetch(`${baseUrl}/api/auth/me`, {
+            headers: { 'Authorization': `Bearer ${sessionToken}` }
+          });
+          const data = await res.json();
+          if (res.ok && data.user && data.user.is_drive_linked) {
+            setUser(data.user);
+            clearInterval(interval);
+          }
+        } catch (e) {
+          console.error("Erro no polling do perfil:", e);
+        }
+      }, 3000);
+    }
+    return () => {
+      if (interval) clearInterval(interval);
+    };
+  }, [sessionToken, user?.is_drive_linked, baseUrl]);
+
   const handleGoogleLogin = async () => {
     if (Capacitor.isNativePlatform()) {
       setAuthLoading(true);
       setAuthError(null);
       try {
         const googleUser = await GoogleAuth.signIn();
-        const serverAuthCode = googleUser.serverAuthCode;
-        if (!serverAuthCode) throw new Error("Código de autorização não retornado pelo Google.");
+        const idToken = googleUser.authentication.idToken;
+        if (!idToken) throw new Error("ID Token não retornado pelo Google.");
 
-        const res = await fetch(`${baseUrl}/api/auth/google/login`, {
+        const res = await fetch(`${baseUrl}/api/auth/google/one-tap`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ code: serverAuthCode })
+          body: JSON.stringify({ credential: idToken })
         });
         const data = await res.json();
         if (res.ok && data.token) {
@@ -508,9 +547,9 @@ export default function App() {
     } else {
       const client_id = "569049899903-rb5qc608qpdnt8vkqv66dl4ctkdjvnfq.apps.googleusercontent.com";
       const redirect_uri = "http://localhost:3000/api/auth/google/callback";
-      const scope = "openid email https://www.googleapis.com/auth/drive.file";
+      const scope = "openid email";
       const state = "login";
-      const authUrl = `https://accounts.google.com/o/oauth2/v2/auth?client_id=${client_id}&redirect_uri=${encodeURIComponent(redirect_uri)}&response_type=code&scope=${encodeURIComponent(scope)}&state=${encodeURIComponent(state)}&prompt=consent&access_type=offline`;
+      const authUrl = `https://accounts.google.com/o/oauth2/v2/auth?client_id=${client_id}&redirect_uri=${encodeURIComponent(redirect_uri)}&response_type=code&scope=${encodeURIComponent(scope)}&state=${encodeURIComponent(state)}`;
       
       window.location.href = authUrl;
     }
