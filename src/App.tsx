@@ -424,7 +424,7 @@ export default function App() {
         }
       }
     });
-    client.requestAccessToken();
+    client.requestCode();
   };
 
   const handleGoogleLogin = () => {
@@ -466,7 +466,7 @@ export default function App() {
         }
       }
     });
-    client.requestAccessToken();
+    client.requestCode();
   };
 
   const handleSaveToDrive = async (objectId: string, objectName: string, drawingData: string) => {
